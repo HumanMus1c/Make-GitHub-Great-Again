@@ -2,18 +2,17 @@
 
 🎨 Make the GitHub Release assets list more beautiful and readable!
 
-This is a simple and practical browser script that adds alternating background colors to each asset on the GitHub Release page, making the download list clearer and easier to read, reducing visual fatigue, and preventing downloading the wrong file.
+This is a simple and practical browser script that adds alternating background colors and dynamic platform-specific SVG icons to each asset on the GitHub Release page. It makes the download list clearer, reduces visual fatigue, and helps prevent downloading the wrong file.
 
 ![Example Image](https://greasyfork.org/rails/active_storage/blobs/redirect/eyJfcmFpbHMiOnsiZGF0YSI6MTgwOTA1LCJwdXIiOiJibG9iX2lkIn19--9a092f076ab9e141a88a4c0ec21746599ddae538/Honeycam%202025-06-21%2017-04-44.gif)
 
 ## ✨ Main Features
 
-- [✅]Add alternating background colors to the Release Assets list
-- [✅]Improve readability and distinguishability of asset entries
-- [✅]Prevent file download errors caused by visual confusion
-- [✅] Adapt to GitHub's dark/light theme
-- [✅] Automatically switches to the customized colors. The two sets of colors are independent and does'nt affect each other.
-- [✅] Supports setting colors for both dark and light themes, with independent colors for each theme.
+- [✅] **Alternating Backgrounds**: Add alternating background colors and hover effects to the Release Assets list.
+- [✅] **Smart SVG Icon Replacement**: Automatically replace default icons with platform or format-specific SVG icons (Windows, Linux, Apple, Android, Source code, etc.) based on file names.
+- [✅] **Architecture Highlight**: Instantly highlight architecture keywords (e.g., x86_64, aarch64, arm64) in file names to prevent visual confusion.
+- [✅] **Independent Theme Adaptation**: Adapts flawlessly to GitHub's dark/light themes. Supports saving customized configurations independently for both modes.
+- [✅] **Powerful Settings Panel**: Intuitive, auto-resizing settings panel that allows you to easily customize row colors and toggle the SVG icon replacement on/off in real-time!
 
 ## 🚀 Installation
 
@@ -28,16 +27,16 @@ This is a simple and practical browser script that adds alternating background c
 ## 💡 Usage
 
 After installation, the script will automatically take effect on GitHub Release pages:
-1. Visit the Release page of any GitHub repository
-2. Click the Tampermonkey/Greasemonkey icon
-3. Find the script menu
-4. Set custom colors you like.
+1. Visit the Release page of any GitHub repository.
+2. Click the Tampermonkey/Greasemonkey icon.
+3. Find the `🎨 设置` (Settings) menu option provided by the script.
+4. Set custom colors you like or toggle the SVG replacements on the fly!
 
 ## 🎯 Use Cases
 
-- When a project release contains program versions for multiple platforms
-- When the release contains many files with similar names
-- When you need to quickly find resources for a specific platform or version
+- When a project release contains program versions for multiple platforms.
+- When the release contains many files with similar names.
+- When you need to quickly locate and distinguish architecture versions (like x86_64 vs aarch64).
 
 ## 🤝 Contributing
 
@@ -49,4 +48,4 @@ Feel free to submit Issues and Pull Requests to help improve this project!
 
 ---
 
-**Note:** This script only optimizes the style of the Assets list on the GitHub Release page and does not modify any functional content. 
+**Note:** This script only optimizes the style and visual clarity of the Assets list on the GitHub Release page and does not modify any functional content.
