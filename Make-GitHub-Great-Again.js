@@ -2,7 +2,7 @@
 // @name                    Make-GitHub-Great-Again
 // @name:en                 Make-GitHub-Great-Again
 // @namespace               https://github.com
-// @version                 3.5
+// @version                 3.7
 // @description             为 Release Assets 每条条目添加交替的背景色，并根据文件名关键词替换SVG图标
 // @description:en          Add alternating background colors to each item in the Release Assets list, and replace SVG icons based on filename keywords
 // @author                  https://github.com/HumanMus1c
@@ -743,6 +743,42 @@
         'mipsle', 'mips', 'x64', 'x86', '386', 'arm'
     ].sort((a, b) => b.length - a.length); // 按长度降序排序
 
+    // 为每个架构关键词生成对应的颜色样式
+    let dynamicStyles = '';
+
+    // 使用黄金分割比来生成视觉上更分散的颜色
+    const goldenRatioConjugate = 0.618033988749895;
+    let currentHue = 0.4; // 初始色相
+
+    archKeywords.forEach((arch) => {
+        currentHue += goldenRatioConjugate;
+        currentHue %= 1;
+
+        const hue = Math.floor(currentHue * 360);
+        const className = `arch-${arch.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-')}`;
+
+        dynamicStyles += `
+        .arch-highlight.${className} {
+            --arch-bg: hsl(${hue}, 85%, 90%);
+            --arch-color: hsl(${hue}, 90%, 30%);
+            --arch-border: hsl(${hue}, 85%, 80%);
+        }
+        html.dark .arch-highlight.${className},
+        html[data-color-mode="dark"] .arch-highlight.${className} {
+            --arch-bg: hsl(${hue}, 70%, 20%);
+            --arch-color: hsl(${hue}, 85%, 75%);
+            --arch-border: hsl(${hue}, 70%, 30%);
+        }
+        @media (prefers-color-scheme: dark) {
+            html:not([data-color-mode="light"]):not(.light) .arch-highlight.${className} {
+                --arch-bg: hsl(${hue}, 70%, 20%);
+                --arch-color: hsl(${hue}, 85%, 75%);
+                --arch-border: hsl(${hue}, 70%, 30%);
+            }
+        }
+        `;
+    });
+
     // 添加全局样式
     const style = document.createElement('style');
     style.textContent = `
@@ -762,24 +798,18 @@
             align-items: center;
         }
 
-        /* 架构关键词高亮样式 */
+        /* 架构关键词基础高亮样式 */
         .arch-highlight {
-            background-color: #FFEB3B; /* 亮黄色 */
-            color: #000;
-            padding: 1px 4px;
+            padding: 1px 6px;
             border-radius: 4px;
-            font-weight: 500;
+            font-weight: bold;
             box-shadow: 0 1px 2px rgba(0,0,0,0.1);
             margin: 0 2px;
             display: inline-block;
-        }
-
-        /* 深色模式适配 */
-        @media (prefers-color-scheme: dark) {
-            .arch-highlight {
-                background-color: #FFD600; /* 深色模式下更亮的黄色 */
-                color: #000;
-            }
+            font-size: 0.9em;
+            background-color: var(--arch-bg, #FFEB3B);
+            color: var(--arch-color, #000);
+            border: 1px solid var(--arch-border, transparent);
         }
 
         /* 文件名样式调整 */
@@ -787,6 +817,8 @@
             display: inline-block;
             margin-left: 4px;
         }
+        
+        ${dynamicStyles}
     `;
     document.head.appendChild(style);
 
@@ -807,8 +839,8 @@
 
         // 替换匹配到的关键词
         result = result.replace(regex, match => {
-            // 检查匹配是否完整（前后是非字母数字或边界）
-            return `<span class="arch-highlight">${match}</span>`;
+            const className = `arch-${match.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-')}`;
+            return `<span class="arch-highlight ${className}">${match}</span>`;
         });
 
         return result;
@@ -832,6 +864,15 @@
             if (!originalSvg || !fileName) return;
 
             const fileNameLower = fileName.toLowerCase();
+            const cleanFileName = fileNameLower.replace(/\s+/g, ' ').trim();
+
+            // 排除源码条目 (GitHub 的系统源码压缩包附带折行与空格)
+            if (cleanFileName === 'source code (zip)' || cleanFileName === 'source code (tar.gz)' || cleanFileName === 'source code') {
+                // 将这些元素也标记为已处理，防止 MutationObserver 重复检查
+                item.dataset.svgReplaced = 'true';
+                return;
+            }
+
             let matchedRule = null;
             let fileExtension = "";
 
