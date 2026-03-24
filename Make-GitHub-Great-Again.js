@@ -2,7 +2,7 @@
 // @name                    Make-GitHub-Great-Again
 // @name:en                 Make-GitHub-Great-Again
 // @namespace               https://github.com
-// @version                 3.7
+// @version                 3.8
 // @description             为 Release Assets 每条条目添加交替的背景色，并根据文件名关键词替换SVG图标
 // @description:en          Add alternating background colors to each item in the Release Assets list, and replace SVG icons based on filename keywords
 // @author                  https://github.com/HumanMus1c
@@ -751,10 +751,19 @@
     let currentHue = 0.4; // 初始色相
 
     archKeywords.forEach((arch) => {
-        currentHue += goldenRatioConjugate;
-        currentHue %= 1;
+        let hue;
 
-        const hue = Math.floor(currentHue * 360);
+        // 为 amd64 和 arm64 分配完全不同的固定色相，避免颜色相近且文字相似导致的混淆
+        if (arch.toLowerCase() === 'amd64') {
+            hue = 210; // 蓝色
+        } else if (arch.toLowerCase() === 'arm64') {
+            hue = 15; // 桔红色
+        } else {
+            currentHue += goldenRatioConjugate;
+            currentHue %= 1;
+            hue = Math.floor(currentHue * 360);
+        }
+
         const className = `arch-${arch.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-')}`;
 
         dynamicStyles += `
