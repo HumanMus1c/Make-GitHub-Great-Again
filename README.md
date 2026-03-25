@@ -22,7 +22,7 @@
    - Edge: [Tampermonkey](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd)
 
 2. 点击下面的链接安装脚本：
-   [安装 Make-GitHub-Great-Again!](https://update.greasyfork.org/scripts/537852/Make-GitHub-Great-Again%21.user.js)
+   [安装 Make-GitHub-Great-Again](https://update.greasyfork.org/scripts/537852/Make-GitHub-Great-Again.user.js)
 
 ## 💡 使用方法
 
@@ -36,7 +36,7 @@
 
 - 当项目发布包含多个平台版本的程序时。
 - Release 包含大量相似名称的文件时。
-- 需要快速提取、高亮并确定某个特定平台或架构（如 x86_64 vs aarch64）的时候。
+- 需要快速确定某个特定平台或架构（如 x86_64 vs aarch64）的时候。
 
 ## 🤝 贡献
 

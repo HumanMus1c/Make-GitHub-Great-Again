@@ -363,6 +363,11 @@
             box-shadow: 0 0 5px rgba(0,0,0,0.1);
         }
 
+        #svgToggleBtn:hover, #highlightToggleBtn:hover {
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
         .color-picker-container {
             position: relative;
             display: inline-block;
@@ -523,13 +528,18 @@
                     </div>
                 </div>
                 <div class="color-picker-row">
-                    <span class="menu-command">📦 替换 SVG 图标</span>
+                    <span class="menu-command">📦 系统平台</span>
                     <div class="color-picker-container">
                         <button class="color-button" id="svgToggleBtn" style="display: flex; align-items: center; justify-content: center; padding: 0; background-color: transparent;"></button>
                     </div>
                 </div>
                 <div style="margin-top: 0.75em; border-top: 1px solid rgba(125, 125, 125, 0.2); padding-top: 0.75em;">
-                    <span class="menu-command" style="display: block; margin-bottom: 0.5em;">🏷️ 自定义关键词及颜色</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5em;">
+                        <span class="menu-command" style="display: block;">🏷️ 自定义高亮关键词</span>
+                        <div class="color-picker-container">
+                            <button class="color-button" id="highlightToggleBtn" style="display: flex; align-items: center; justify-content: center; padding: 0; background-color: transparent;" title="开启/关闭关键词高亮"></button>
+                        </div>
+                    </div>
                     <div id="customKeywordsContainer" style="max-height: 8.5em; overflow-y: auto; margin-bottom: 0.5em;">
                         <!-- 动态渲染关键词列表 -->
                     </div>
@@ -568,15 +578,33 @@
 
             svgToggleBtn.addEventListener('click', (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 isSvgEnabled = !isSvgEnabled;
                 GM_setValue('svgEnabled', isSvgEnabled);
                 updateSvgBtnUI(isSvgEnabled);
+                processAssets();
+            });
+        }
 
-                if (isSvgEnabled) {
-                    replaceIcons();
-                } else {
-                    restoreIcons();
-                }
+        // 初始化关键词高亮切换状态
+        const highlightToggleBtn = dialog.querySelector('#highlightToggleBtn');
+        if (highlightToggleBtn) {
+            let isHighlightEnabled = GM_getValue('highlightEnabled', true);
+
+            // 更新按钮UI的函数
+            const updateHighlightBtnUI = (enabled) => {
+                highlightToggleBtn.innerHTML = enabled ? '<span style="font-size: 1.4em;">✔️</span>' : '';
+            };
+
+            updateHighlightBtnUI(isHighlightEnabled);
+
+            highlightToggleBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                isHighlightEnabled = !isHighlightEnabled;
+                GM_setValue('highlightEnabled', isHighlightEnabled);
+                updateHighlightBtnUI(isHighlightEnabled);
+                processAssets();
             });
         }
 
@@ -671,6 +699,7 @@
             // 绑定删除事件
             container.querySelectorAll('.keyword-remove').forEach(btn => {
                 btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
                     const idx = parseInt(e.target.dataset.index);
                     activeKeywords.splice(idx, 1);
                     renderKeywords();
@@ -687,7 +716,8 @@
         const newKeywordColor = dialog.querySelector('#newKeywordColor');
 
         if (addKeywordBtn && newKeywordInput && newKeywordColor) {
-            addKeywordBtn.addEventListener('click', () => {
+            addKeywordBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
                 const text = newKeywordInput.value.trim();
                 const color = newKeywordColor.value;
 
@@ -732,15 +762,26 @@
             applyColors(); // 动态更新颜色
 
             // 重新应用高亮及图标（恢复后再替换以刷新高亮）
-            if (typeof restoreIcons === 'function' && typeof replaceIcons === 'function') {
-                restoreIcons();
+            if (typeof processAssets === 'function') {
+                // 强制还原原版文本以便刷新高亮
+                const assetItems = document.querySelectorAll('.Box.Box--condensed li.Box-row');
+                assetItems.forEach(item => {
+                    if (item.dataset.highlightProcessed === 'true') {
+                        const link = item.querySelector('div.d-flex.flex-justify-start.col-12.col-lg-6 > a');
+                        if (link && item._originalFileName) {
+                            link.innerHTML = item._originalFileName;
+                        }
+                        item.dataset.highlightProcessed = 'false';
+                    }
+                });
+
                 // 强制重新生成样式并重新高亮
                 const existingStyle = document.getElementById('MGGA-custom-arch-style');
                 if (existingStyle) existingStyle.remove();
                 if (typeof window.initializeArchStyles === 'function') {
                     window.initializeArchStyles();
                 }
-                setTimeout(() => replaceIcons(), 10);
+                setTimeout(() => processAssets(), 10);
             }
         });
 
@@ -1122,150 +1163,117 @@
         return result;
     }
 
-    // 替换SVG图标的函数
-    function replaceIcons() {
+    // 统筹处理文件资源的SVG图标和高亮
+    function processAssets() {
+        const isSvgEnabled = GM_getValue('svgEnabled', true);
+        const isHighlightEnabled = GM_getValue('highlightEnabled', true);
         const assetItems = document.querySelectorAll('.Box.Box--condensed li.Box-row');
 
         assetItems.forEach(item => {
-            // 检查是否已处理过
-            if (item.dataset.svgReplaced) return;
-
             const link = item.querySelector('div.d-flex.flex-justify-start.col-12.col-lg-6 > a');
             if (!link) return;
 
             const fileName = link.textContent;
             const svgContainer = item.querySelector('div.d-flex.flex-justify-start.col-12.col-lg-6');
-            const originalSvg = svgContainer?.querySelector('svg:first-child');
+            if (!svgContainer) return;
 
-            if (!originalSvg || !fileName) return;
+            // 缓存原始文件和Svg
+            if (!item._originalFileName && fileName) {
+                // 如果是从其他状态恢复或者初次加载，确保取到最净的文本
+                item._originalFileName = fileName;
+            }
+            
+            const currentSvg = svgContainer.querySelector('svg');
+            if (currentSvg && !currentSvg.classList.contains('custom-svg-icon')) {
+                if (!item._originalSvg) item._originalSvg = currentSvg;
+            }
 
-            const fileNameLower = fileName.toLowerCase();
+            const originalFileName = item._originalFileName;
+            if (!originalFileName) return;
+
+            const fileNameLower = originalFileName.toLowerCase();
             const cleanFileName = fileNameLower.replace(/\s+/g, ' ').trim();
 
-            // 排除源码条目 (GitHub 的系统源码压缩包附带折行与空格)
-            if (cleanFileName === 'source code (zip)' || cleanFileName === 'source code (tar.gz)' || cleanFileName === 'source code') {
-                // 将这些元素也标记为已处理，防止 MutationObserver 重复检查
-                item.dataset.svgReplaced = 'true';
-                return;
-            }
+            const isSourceCode = (cleanFileName === 'source code (zip)' || cleanFileName === 'source code (tar.gz)' || cleanFileName === 'source code');
 
-            let matchedRule = null;
-            let fileExtension = "";
+            // === SVG 图标处理 ===
+            if (isSvgEnabled && !isSourceCode) {
+                if (item.dataset.svgProcessed !== 'true') {
+                    let matchedRule = null;
+                    let fileExtension = "";
 
-            // 提取文件扩展名
-            const extensionMatch = fileName.match(/\.([a-z0-9]+)$/i);
-            if (extensionMatch) {
-                fileExtension = extensionMatch[0].toLowerCase();
-            }
+                    const extensionMatch = originalFileName.match(/\.([a-z0-9]+)$/i);
+                    if (extensionMatch) fileExtension = extensionMatch[0].toLowerCase();
 
-            // 智能边界检测关键词函数，防止类似 "darwin" 被误认为 "win"
-            const hasKeyword = (filename, keyword) => {
-                const lowerFileName = filename.toLowerCase();
-                const lowerKeyword = keyword.toLowerCase();
-                if (lowerKeyword.startsWith('.')) {
-                    return lowerFileName.includes(lowerKeyword);
-                }
-                // 使用非英文字母(^|[^a-z])作为左边界，和([^a-z]|$)作为右边界。
-                // 这样能保证像 win64, app-win, my_win 这种带数字和符号的都能正确匹配，同时防范纯字母粘连（如 darwin, emacs）
-                const escapedKeyword = lowerKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const regex = new RegExp(`(^|[^a-z])${escapedKeyword}([^a-z]|$)`, 'i');
-                return regex.test(lowerFileName);
-            };
+                    const hasKeyword = (filename, keyword) => {
+                        const lowerFileName = filename.toLowerCase();
+                        const lowerKeyword = keyword.toLowerCase();
+                        if (lowerKeyword.startsWith('.')) return lowerFileName.includes(lowerKeyword);
+                        const escapedKeyword = lowerKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const regex = new RegExp(`(^|[^a-z])${escapedKeyword}([^a-z]|$)`, 'i');
+                        return regex.test(lowerFileName);
+                    };
 
-            // 优先检查文件扩展名
-            for (const rule of iconRules) {
-                if (fileExtension && rule.keywords.some(keyword =>
-                    keyword.startsWith('.') && fileExtension.includes(keyword.toLowerCase()))) {
-                    matchedRule = rule;
-                    break;
-                }
-            }
-
-            // 对于压缩包文件，额外检查系统关键词
-            if (!matchedRule && archiveExtensions.includes(fileExtension)) {
-                // 检查文件名中是否包含系统关键词
-                const systemMatch = systemKeywords.find(keyword =>
-                    hasKeyword(fileNameLower, keyword));
-
-                if (systemMatch) {
-                    // 根据系统关键词匹配规则
-                    matchedRule = iconRules.find(rule =>
-                        rule.keywords.some(keyword =>
-                            keyword.toLowerCase() === systemMatch.toLowerCase()));
-                }
-            }
-
-            // 如果还没有匹配，则检查所有关键词
-            if (!matchedRule) {
-                for (const rule of iconRules) {
-                    if (rule.keywords.some(keyword =>
-                        hasKeyword(fileNameLower, keyword))) {
-                        matchedRule = rule;
-                        break;
+                    for (const rule of iconRules) {
+                        if (fileExtension && rule.keywords.some(keyword => keyword.startsWith('.') && fileExtension.includes(keyword.toLowerCase()))) {
+                            matchedRule = rule; break;
+                        }
                     }
+
+                    if (!matchedRule && archiveExtensions.includes(fileExtension)) {
+                        const systemMatch = systemKeywords.find(keyword => hasKeyword(fileNameLower, keyword));
+                        if (systemMatch) {
+                            matchedRule = iconRules.find(rule => rule.keywords.some(keyword => keyword.toLowerCase() === systemMatch.toLowerCase()));
+                        }
+                    }
+
+                    if (!matchedRule) {
+                        for (const rule of iconRules) {
+                            if (rule.keywords.some(keyword => hasKeyword(fileNameLower, keyword))) {
+                                matchedRule = rule; break;
+                            }
+                        }
+                    }
+
+                    if (matchedRule) {
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = matchedRule.svg;
+                        const newSvg = tempDiv.firstChild;
+                        newSvg.classList.add('custom-svg-icon');
+
+                        const activeSvg = svgContainer.querySelector('svg');
+                        if (activeSvg) {
+                            svgContainer.replaceChild(newSvg, activeSvg);
+                        }
+                    }
+                    item.dataset.svgProcessed = 'true';
+                }
+            } else {
+                if (item.dataset.svgProcessed === 'true') {
+                    const customSvg = svgContainer.querySelector('svg.custom-svg-icon');
+                    if (customSvg && item._originalSvg) {
+                        svgContainer.replaceChild(item._originalSvg, customSvg);
+                    }
+                    item.dataset.svgProcessed = 'false';
                 }
             }
 
-            if (matchedRule) {
-                // 创建临时容器来解析SVG
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = matchedRule.svg;
-                const newSvg = tempDiv.firstChild;
-
-                // 添加自定义类名
-                newSvg.classList.add('custom-svg-icon');
-
-                // 替换SVG
-                if (!item._originalSvg) item._originalSvg = originalSvg;
-                svgContainer.replaceChild(newSvg, originalSvg);
+            // === 关键词高亮处理 ===
+            if (isHighlightEnabled) {
+                if (item.dataset.highlightProcessed !== 'true') {
+                    const fileNameContainer = document.createElement('span');
+                    fileNameContainer.className = 'file-name-container';
+                    fileNameContainer.innerHTML = highlightArchKeywords(originalFileName);
+                    link.innerHTML = '';
+                    link.appendChild(fileNameContainer);
+                    item.dataset.highlightProcessed = 'true';
+                }
+            } else {
+                if (item.dataset.highlightProcessed === 'true') {
+                    link.innerHTML = originalFileName;
+                    item.dataset.highlightProcessed = 'false';
+                }
             }
-
-            // 处理文件名高亮
-            if (!link.dataset.highlighted) {
-                if (!item._originalFileName) item._originalFileName = fileName;
-                // 创建容器包裹文件名
-                const fileNameContainer = document.createElement('span');
-                fileNameContainer.className = 'file-name-container';
-
-                // 高亮架构关键词
-                fileNameContainer.innerHTML = highlightArchKeywords(fileName);
-
-                // 替换链接内容
-                link.innerHTML = '';
-                link.appendChild(fileNameContainer);
-
-                // 标记为已处理
-                link.dataset.highlighted = 'true';
-            }
-
-            // 标记为已处理
-            item.dataset.svgReplaced = 'true';
-        });
-    }
-
-    // 恢复原始SVG图标和文件名的函数
-    function restoreIcons() {
-        const assetItems = document.querySelectorAll('.Box.Box--condensed li.Box-row');
-        assetItems.forEach(item => {
-            if (!item.dataset.svgReplaced) return;
-
-            const link = item.querySelector('div.d-flex.flex-justify-start.col-12.col-lg-6 > a');
-            const svgContainer = item.querySelector('div.d-flex.flex-justify-start.col-12.col-lg-6');
-            const customSvg = svgContainer?.querySelector('svg.custom-svg-icon');
-
-            if (customSvg && item._originalSvg) {
-                // 恢复原始SVG
-                svgContainer.replaceChild(item._originalSvg, customSvg);
-            }
-
-            if (link && item._originalFileName) {
-                // 恢复原始文件名
-                link.innerHTML = item._originalFileName;
-                delete link.dataset.highlighted;
-            }
-
-            // 清除已处理标记
-            delete item.dataset.svgReplaced;
         });
     }
 
@@ -1283,8 +1291,8 @@
                 }
             }
 
-            if (needsUpdate && GM_getValue('svgEnabled', true)) {
-                replaceIcons();
+            if (needsUpdate) {
+                processAssets();
             }
         });
 
@@ -1295,9 +1303,7 @@
     }
 
     // 初始化替换
-    if (GM_getValue('svgEnabled', true)) {
-        replaceIcons();
-    }
+    processAssets();
     setupAssetsObserver();
 
     // 初始化悬浮齿轮按钮

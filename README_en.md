@@ -22,7 +22,7 @@ This is a simple and practical browser script that adds alternating background c
    - Edge: [Tampermonkey](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd)
 
 2. Click the link below to install the script:
-   [Install Make-GitHub-Great-Again!](https://update.greasyfork.org/scripts/537852/Make-GitHub-Great-Again%21.user.js)
+   [Install Make-GitHub-Great-Again](https://update.greasyfork.org/scripts/537852/Make-GitHub-Great-Again.user.js)
 
 ## 💡 Usage
 
@@ -36,7 +36,7 @@ After installation, the script will automatically take effect on GitHub Release 
 
 - When a project release contains program versions for multiple platforms.
 - When the release contains many files with similar names.
-- When you need to quickly locate and distinguish architecture versions (like x86_64 vs aarch64).
+- When you need to quickly distinguish architecture versions (like x86_64 vs aarch64).
 
 ## 🤝 Contributing
 
