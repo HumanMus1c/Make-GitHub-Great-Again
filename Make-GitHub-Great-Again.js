@@ -2,7 +2,7 @@
 // @name                    Make-GitHub-Great-Again
 // @name:en                 Make-GitHub-Great-Again
 // @namespace               https://github.com
-// @version                 3.8
+// @version                 4.0
 // @description             为 Release Assets 每条条目添加交替的背景色，并根据文件名关键词替换SVG图标
 // @description:en          Add alternating background colors to each item in the Release Assets list, and replace SVG icons based on filename keywords
 // @author                  https://github.com/HumanMus1c
@@ -151,18 +151,24 @@
 
     // 添加CSS样式 - 对话框样式（固定不变）
     GM_addStyle(`
+        :root {
+            --mgga-text-scale: 1.0em;
+            --mgga-btn-scale: 0.8em;
+        }
+
         /* 对话框样式 - 修复主题跟随问题 */
         .color-picker-dialog {
             position: fixed;
             top: 50%; /* 垂直居中 */
-            left: 15px; /* 距离左侧15px */
+            left: 1em; /* 距离左侧缩进跟随缩放 */
             transform: translateY(-50%) translateX(-100%);
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 2px 20px rgba(0,0,0,0.2);
+            border-radius: 0.5em;
+            padding: 1.25em;
+            box-shadow: 0 0.15em 1.5em rgba(0,0,0,0.2);
             z-index: 10000;
             min-width: max-content !important;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            font-family: inherit; /* 继承页面字体 */
+            font-size: var(--mgga-text-scale); /* 文本字体总体缩放 */
 
             /* 初始状态 - 不可见 */
             opacity: 0;
@@ -170,7 +176,7 @@
             pointer-events: none;
 
             /* 过渡动画设置 */
-            transition: opacity 0.5s ease, visibility 0.5s ease, transform 0.5s ease;
+            transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
         }
 
         /* 明亮主题样式 */
@@ -253,20 +259,20 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 10px;
+            margin-bottom: 1em;
+            padding-bottom: 0.5em;
         }
 
         .color-picker-title {
             font-weight: bold;
             margin: 0;
-            font-size: 18px;
+            font-size: 1.25em;
         }
 
         .color-picker-close {
             cursor: pointer;
-            padding: 5px 10px;
-            font-size: 24px;
+            padding: 0.3em 0.6em;
+            font-size: 1.5em;
             transition: all 0.3s ease;
         }
 
@@ -277,37 +283,38 @@
         .color-picker-content {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 0.75em;
         }
 
         .color-picker-row {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 0.75em;
             justify-content: space-between;
         }
 
         .menu-command {
-            font-size: 16px;
+            font-size: 1em;
             font-weight: 500;
-            min-width: 120px;
+            min-width: 8em;
         }
 
         .button-row {
             display: flex;
             justify-content: flex-end;
-            gap: 10px;
-            margin-top: 10px;
+            gap: 0.75em;
+            margin-top: 0.75em;
         }
 
         .dialog-button {
-            padding: 8px 16px;
+            padding: 0.5em 1em;
             border: none;
-            border-radius: 6px;
+            border-radius: 0.4em;
             cursor: pointer;
             font-weight: bold;
+            font-size: var(--mgga-btn-scale);
             transition: all 0.3s ease;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            font-family: inherit;
         }
 
         /* 按钮颜色保持不变 */
@@ -343,9 +350,10 @@
         }
 
         .color-button {
-            width: 30px;
-            height: 30px;
-            border-radius: 6px;
+            font-size: var(--mgga-btn-scale);
+            width: 2em;
+            height: 2em;
+            border-radius: 0.4em;
             cursor: pointer;
             transition: all 0.3s ease;
         }
@@ -368,6 +376,98 @@
             height: 100%;
             opacity: 0;
             cursor: pointer;
+        }
+
+        /* 悬浮设置按钮样式 */
+        #mgga-float-btn {
+            position: fixed;
+            left: 1em;
+            top: 50%;
+            /* 保证居中显示，拖动时我们会修改top实现位移 */
+            transform: translateY(-50%);
+            width: 2.8em;
+            height: 2.8em;
+            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid #d0d7de;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: var(--mgga-btn-scale); /* 按钮控件缩放 */
+            cursor: pointer;
+            z-index: 9999;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            user-select: none;
+            transition: opacity 0.4s ease, margin-left 0.4s ease, background 0.2s ease;
+        }
+
+        #mgga-float-btn:hover {
+            background: rgba(255, 255, 255, 1);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+        }
+        
+        #mgga-float-btn:active {
+            cursor: grabbing;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            #mgga-float-btn {
+                background: rgba(30, 30, 30, 0.85);
+                border-color: #30363d;
+            }
+            #mgga-float-btn:hover {
+                background: rgba(50, 50, 50, 1);
+            }
+        }
+
+        /* 悬浮按钮动画隐藏状态 (向右隐藏) */
+        #mgga-float-btn.hidden-to-right {
+            opacity: 0;
+            pointer-events: none;
+            /* 向右位移 */
+            margin-left: 2em;
+        }
+        
+        /* 拖拽时的强制禁用动画类 */
+        #mgga-float-btn.is-dragging {
+            transition: none !important;
+        }
+
+        /* 自定义关键词高亮样式 */
+        .custom-keyword-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.4em 0.6em;
+            background: rgba(125, 125, 125, 0.1);
+            border-radius: 0.3em;
+            margin-bottom: 0.4em;
+            font-size: 0.9em;
+        }
+        
+        .custom-keyword-item .keyword-text {
+            font-weight: bold;
+            flex-grow: 1;
+        }
+        
+        .custom-keyword-item .keyword-color {
+            width: 1.25em;
+            height: 1.25em;
+            border-radius: 0.3em;
+            margin: 0 0.5em;
+            border: 1px solid rgba(125, 125, 125, 0.3);
+            flex-shrink: 0;
+        }
+        
+        .custom-keyword-item .keyword-remove {
+            color: #d73a49;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        
+        .custom-keyword-item .keyword-remove:hover {
+            color: #cb2431;
         }
     `);
 
@@ -402,7 +502,7 @@
             </div>
             <div class="color-picker-content">
                 <div class="color-picker-row">
-                    <span class="menu-command">⚙️ 设置奇数行颜色</span>
+                    <span class="menu-command">🔢 设置奇数行颜色</span>
                     <div class="color-picker-container">
                         <button class="color-button" id="oddRowColorBtn" style="background-color: ${customColors.oddRowColor}"></button>
                         <input type="color" id="oddRowColorPicker" value="${customColors.oddRowColor}">
@@ -425,14 +525,26 @@
                 <div class="color-picker-row">
                     <span class="menu-command">📦 替换 SVG 图标</span>
                     <div class="color-picker-container">
-                        <button class="color-button" id="svgToggleBtn" style="display: flex; align-items: center; justify-content: center; font-size: 22px; padding: 0; background-color: transparent;"></button>
+                        <button class="color-button" id="svgToggleBtn" style="display: flex; align-items: center; justify-content: center; padding: 0; background-color: transparent;"></button>
                     </div>
                 </div>
-                <div class="button-row">
+                <div style="margin-top: 0.75em; border-top: 1px solid rgba(125, 125, 125, 0.2); padding-top: 0.75em;">
+                    <span class="menu-command" style="display: block; margin-bottom: 0.5em;">🏷️ 自定义关键词及颜色</span>
+                    <div id="customKeywordsContainer" style="max-height: 8.5em; overflow-y: auto; margin-bottom: 0.5em;">
+                        <!-- 动态渲染关键词列表 -->
+                    </div>
+                    <div style="display: flex; gap: 0.5em; align-items: center;">
+                        <input type="text" id="newKeywordInput" placeholder="输入新关键词" style="flex: 1; padding: 0.4em; border-radius: 0.3em; border: 1px solid var(--arch-border, #d0d7de); background: transparent; color: inherit; font-size: 1em;">
+                        <input type="color" id="newKeywordColor" value="#ffeb3b" style="width: 2.2em; height: 2.2em; padding: 0; border: none; cursor: pointer; background: transparent; font-size: var(--mgga-btn-scale);">
+                        <button id="addKeywordBtn" title="添加关键词" style="background: #2da44e; color: white; border: none; border-radius: 0.3em; padding: 0.4em 0.8em; cursor: pointer; font-weight: bold; font-size: var(--mgga-btn-scale);">添加</button>
+                    </div>
+                </div>
+
+                <div class="button-row" style="margin-top: 1em;">
         <button class="dialog-button reset-button" title="重置为当前主题默认颜色">重置</button>
-          <div style="margin-left: auto; display: flex; gap: 10px;">
-            <button class="dialog-button cancel-button">取消</button>
-            <button class="dialog-button confirm-button">确认</button>
+          <div style="margin-left: auto; display: flex; gap: 0.75em;">
+            <button class="dialog-button cancel-button" id="cancelDialogBtn">取消</button>
+            <button class="dialog-button confirm-button" id="confirmDialogBtn">确认</button>
           </div>
         </div>
         `;
@@ -449,7 +561,7 @@
 
             // 更新按钮UI的函数
             const updateSvgBtnUI = (enabled) => {
-                svgToggleBtn.innerHTML = enabled ? '✅' : '';
+                svgToggleBtn.innerHTML = enabled ? '<span style="font-size: 1.4em;">✔️</span>' : '';
             };
 
             updateSvgBtnUI(isSvgEnabled);
@@ -532,6 +644,67 @@
             }
         });
 
+        // 处理自定义关键词列表的渲染
+        let activeKeywords = GM_getValue('userCustomKeywords', []);
+
+        const renderKeywords = () => {
+            const container = dialog.querySelector('#customKeywordsContainer');
+            if (!container) return;
+            container.innerHTML = '';
+
+            if (activeKeywords.length === 0) {
+                container.innerHTML = '<div style="color: gray; font-size: 0.9em; text-align: center; padding: 0.5em 0;">暂无自定义关键词</div>';
+                return;
+            }
+
+            activeKeywords.forEach((kw, index) => {
+                const item = document.createElement('div');
+                item.className = 'custom-keyword-item';
+                item.innerHTML = `
+                    <span class="keyword-text">${kw.text}</span>
+                    <span class="keyword-color" style="background-color: ${kw.color}"></span>
+                    <span class="keyword-remove" data-index="${index}" title="删除">&times;</span>
+                `;
+                container.appendChild(item);
+            });
+
+            // 绑定删除事件
+            container.querySelectorAll('.keyword-remove').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const idx = parseInt(e.target.dataset.index);
+                    activeKeywords.splice(idx, 1);
+                    renderKeywords();
+                });
+            });
+        };
+
+        // 初始化渲染
+        renderKeywords();
+
+        // 添加新关键词按钮功能
+        const addKeywordBtn = dialog.querySelector('#addKeywordBtn');
+        const newKeywordInput = dialog.querySelector('#newKeywordInput');
+        const newKeywordColor = dialog.querySelector('#newKeywordColor');
+
+        if (addKeywordBtn && newKeywordInput && newKeywordColor) {
+            addKeywordBtn.addEventListener('click', () => {
+                const text = newKeywordInput.value.trim();
+                const color = newKeywordColor.value;
+
+                if (text) {
+                    const existingIndex = activeKeywords.findIndex(kw => kw.text.toLowerCase() === text.toLowerCase());
+                    if (existingIndex !== -1) {
+                        activeKeywords[existingIndex].color = color;
+                    } else {
+                        activeKeywords.push({ text, color });
+                    }
+
+                    newKeywordInput.value = '';
+                    renderKeywords();
+                }
+            });
+        }
+
         // 确认按钮功能 - 修复：只保存到当前主题
         confirmBtn.addEventListener('click', () => {
             // 动态获取当前主题
@@ -552,23 +725,52 @@
             // 保存到对应主题的存储键
             GM_setValue(`customColors${saveTheme.charAt(0).toUpperCase() + saveTheme.slice(1)}`, newCustomColors);
 
+            // 保存自定义关键词状态
+            GM_setValue('userCustomKeywords', activeKeywords);
+
             closeDialog(dialog);
             applyColors(); // 动态更新颜色
+
+            // 重新应用高亮及图标（恢复后再替换以刷新高亮）
+            if (typeof restoreIcons === 'function' && typeof replaceIcons === 'function') {
+                restoreIcons();
+                // 强制重新生成样式并重新高亮
+                const existingStyle = document.getElementById('MGGA-custom-arch-style');
+                if (existingStyle) existingStyle.remove();
+                if (typeof window.initializeArchStyles === 'function') {
+                    window.initializeArchStyles();
+                }
+                setTimeout(() => replaceIcons(), 10);
+            }
         });
 
         // 添加ESC键关闭支持
-        document.addEventListener('keydown', function handleEsc(e) {
+        const handleEsc = function (e) {
             if (e.key === 'Escape') {
                 closeDialog(dialog);
             }
-        });
+        };
+        document.addEventListener('keydown', handleEsc);
 
         // 点击外部关闭
-        document.addEventListener('click', function handleOutsideClick(e) {
+        const handleOutsideClick = function (e) {
+            // 如果点击的是悬浮按钮，不作为外部点击处理（即使有stopPropagation也是双重保险）
+            let target = e.target;
+            while (target) {
+                if (target.id === 'mgga-float-btn') return;
+                target = target.parentElement;
+            }
             if (dialog && !dialog.contains(e.target)) {
                 closeDialog(dialog);
             }
-        });
+        };
+        document.addEventListener('click', handleOutsideClick);
+
+        // 将事件清理函数挂载到 dialog 上，供 closeDialog 调用
+        dialog._cleanupEvents = function () {
+            document.removeEventListener('keydown', handleEsc);
+            document.removeEventListener('click', handleOutsideClick);
+        };
     }
 
     // 打开对话框并应用滑入动画
@@ -583,6 +785,12 @@
 
         // 添加可见类触发动画
         dialog.classList.add('visible');
+
+        // 隐藏悬浮按钮
+        const floatBtn = document.getElementById('mgga-float-btn');
+        if (floatBtn) {
+            floatBtn.classList.add('hidden-to-right');
+        }
     }
 
     // 关闭对话框并应用滑出动画
@@ -590,12 +798,23 @@
         // 移除可见类触发滑出动画
         dialog.classList.remove('visible');
 
+        // 恢复悬浮按钮
+        const floatBtn = document.getElementById('mgga-float-btn');
+        if (floatBtn) {
+            floatBtn.classList.remove('hidden-to-right');
+        }
+
+        // 清理绑定的全局事件，防止内存泄漏和重复触发
+        if (typeof dialog._cleanupEvents === 'function') {
+            dialog._cleanupEvents();
+        }
+
         // 动画完成后移除对话框
         setTimeout(() => {
             if (dialog && dialog.parentNode) {
                 dialog.parentNode.removeChild(dialog);
             }
-        }, 500); // 500ms是动画持续时间
+        }, 300); // 300ms是动画持续时间
     }
 
     // 注册油猴菜单选项
@@ -743,112 +962,160 @@
         'mipsle', 'mips', 'x64', 'x86', '386', 'arm'
     ].sort((a, b) => b.length - a.length); // 按长度降序排序
 
-    // 为每个架构关键词生成对应的颜色样式
-    let dynamicStyles = '';
-
-    // 使用黄金分割比来生成视觉上更分散的颜色
-    const goldenRatioConjugate = 0.618033988749895;
-    let currentHue = 0.4; // 初始色相
-
-    archKeywords.forEach((arch) => {
-        let hue;
-
-        // 为 amd64 和 arm64 分配完全不同的固定色相，避免颜色相近且文字相似导致的混淆
-        if (arch.toLowerCase() === 'amd64') {
-            hue = 210; // 蓝色
-        } else if (arch.toLowerCase() === 'arm64') {
-            hue = 15; // 桔红色
-        } else {
-            currentHue += goldenRatioConjugate;
-            currentHue %= 1;
-            hue = Math.floor(currentHue * 360);
+    // HEX转RGB辅助函数
+    function hexToRgb(hex) {
+        let r = 0, g = 0, b = 0;
+        if (hex.length === 4) {
+            r = parseInt(hex[1] + hex[1], 16);
+            g = parseInt(hex[2] + hex[2], 16);
+            b = parseInt(hex[3] + hex[3], 16);
+        } else if (hex.length === 7) {
+            r = parseInt(hex.substring(1, 3), 16);
+            g = parseInt(hex.substring(3, 5), 16);
+            b = parseInt(hex.substring(5, 7), 16);
         }
+        return { r, g, b };
+    }
 
-        const className = `arch-${arch.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-')}`;
+    // 判断颜色是否偏暗
+    function isDarkColor(hex) {
+        const { r, g, b } = hexToRgb(hex);
+        // 使用YIQ公式判断亮度
+        const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+        return yiq < 128; // 小于128认为是暗色
+    }
 
-        dynamicStyles += `
-        .arch-highlight.${className} {
-            --arch-bg: hsl(${hue}, 85%, 90%);
-            --arch-color: hsl(${hue}, 90%, 30%);
-            --arch-border: hsl(${hue}, 85%, 80%);
-        }
-        html.dark .arch-highlight.${className},
-        html[data-color-mode="dark"] .arch-highlight.${className} {
-            --arch-bg: hsl(${hue}, 70%, 20%);
-            --arch-color: hsl(${hue}, 85%, 75%);
-            --arch-border: hsl(${hue}, 70%, 30%);
-        }
-        @media (prefers-color-scheme: dark) {
-            html:not([data-color-mode="light"]):not(.light) .arch-highlight.${className} {
+    // 初始化样式和动态关键词的函数
+    let allCombinedKeywords = [...archKeywords];
+
+    window.initializeArchStyles = function () {
+        let dynamicStyles = '';
+
+        // 基础图标及静态样式
+        let baseStyles = `
+            /* 图标样式 */
+            .custom-svg-icon {
+                width: 1.5em; height: 1.5em; min-width: 1.5em;
+                vertical-align: middle; flex-shrink: 0; margin-right: 8px;
+            }
+            .Box-row .d-flex.flex-justify-start.col-12.col-lg-6 {
+                display: flex; align-items: center;
+            }
+            /* 架构关键词基础高亮样式 */
+            .arch-highlight {
+                padding: 1px 6px; border-radius: 4px; font-weight: bold;
+                box-shadow: 0 1px 2px rgba(0,0,0,0.1); margin: 0 2px;
+                display: inline-block; font-size: 0.9em;
+                background-color: var(--arch-bg, #FFEB3B);
+                color: var(--arch-color, #000);
+                border: 1px solid var(--arch-border, transparent);
+            }
+            .file-name-container {
+                display: inline-block; margin-left: 4px;
+            }
+        `;
+
+        // 处理默认架构关键词颜色
+        const goldenRatioConjugate = 0.618033988749895;
+        let currentHue = 0.4; // 初始色相
+
+        archKeywords.forEach((arch) => {
+            let hue;
+            if (arch.toLowerCase() === 'amd64') {
+                hue = 210; // 蓝色
+            } else if (arch.toLowerCase() === 'arm64') {
+                hue = 15; // 桔红色
+            } else {
+                currentHue += goldenRatioConjugate;
+                currentHue %= 1;
+                hue = Math.floor(currentHue * 360);
+            }
+
+            const className = `arch-${arch.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-')}`;
+
+            dynamicStyles += `
+            .arch-highlight.${className} {
+                --arch-bg: hsl(${hue}, 85%, 90%);
+                --arch-color: hsl(${hue}, 90%, 30%);
+                --arch-border: hsl(${hue}, 85%, 80%);
+            }
+            html.dark .arch-highlight.${className},
+            html[data-color-mode="dark"] .arch-highlight.${className} {
                 --arch-bg: hsl(${hue}, 70%, 20%);
                 --arch-color: hsl(${hue}, 85%, 75%);
                 --arch-border: hsl(${hue}, 70%, 30%);
             }
-        }
-        `;
-    });
+            @media (prefers-color-scheme: dark) {
+                html:not([data-color-mode="light"]):not(.light) .arch-highlight.${className} {
+                    --arch-bg: hsl(${hue}, 70%, 20%);
+                    --arch-color: hsl(${hue}, 85%, 75%);
+                    --arch-border: hsl(${hue}, 70%, 30%);
+                }
+            }
+            `;
+        });
 
-    // 添加全局样式
-    const style = document.createElement('style');
-    style.textContent = `
-        /* 图标样式 */
-        .custom-svg-icon {
-            width: 1.5em;
-            height: 1.5em;
-            min-width: 1.5em;
-            vertical-align: middle;
-            flex-shrink: 0;
-            margin-right: 8px;
-        }
+        // 处理自定义关键词
+        const userKeywords = GM_getValue('userCustomKeywords', []);
 
-        /* 调整文件链接容器 */
-        .Box-row .d-flex.flex-justify-start.col-12.col-lg-6 {
-            display: flex;
-            align-items: center;
-        }
+        userKeywords.forEach((kw) => {
+            const className = `user-kw-${kw.text.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-')}`;
+            const bgColor = kw.color;
+            // 简单判断对比度给予适当字体颜色以防看不清
+            const textColor = isDarkColor(bgColor) ? '#ffffff' : '#000000';
+            const borderColor = isDarkColor(bgColor) ? '#000000' : '#cccccc';
 
-        /* 架构关键词基础高亮样式 */
-        .arch-highlight {
-            padding: 1px 6px;
-            border-radius: 4px;
-            font-weight: bold;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-            margin: 0 2px;
-            display: inline-block;
-            font-size: 0.9em;
-            background-color: var(--arch-bg, #FFEB3B);
-            color: var(--arch-color, #000);
-            border: 1px solid var(--arch-border, transparent);
-        }
+            dynamicStyles += `
+            .arch-highlight.${className} {
+                --arch-bg: ${bgColor} !important;
+                --arch-color: ${textColor} !important;
+                --arch-border: ${borderColor} !important;
+            }
+            `;
+        });
 
-        /* 文件名样式调整 */
-        .file-name-container {
-            display: inline-block;
-            margin-left: 4px;
-        }
-        
-        ${dynamicStyles}
-    `;
-    document.head.appendChild(style);
+        const style = document.createElement('style');
+        style.id = 'MGGA-custom-arch-style';
+        style.textContent = baseStyles + dynamicStyles;
+        document.head.appendChild(style);
 
-    // 高亮架构关键词（优化版）
+        // 更新词典
+        allCombinedKeywords = [
+            ...userKeywords.map(k => k.text),
+            ...archKeywords
+        ].sort((a, b) => b.length - a.length); // 确保长词优先匹配
+    };
+
+    // 初始化样式
+    window.initializeArchStyles();
+
+    // 高亮架构关键词（包含自定义关键词）
     function highlightArchKeywords(text) {
         if (!text) return text;
 
-        // 创建一个处理后的文本副本
         let result = text;
 
-        // 使用正则表达式匹配所有架构关键词（不区分大小写）
+        // 确保匹配列表不为空
+        if (allCombinedKeywords.length === 0) return result;
+
         const regex = new RegExp(
-            `(${archKeywords.map(arch =>
-                arch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // 转义特殊字符
+            `(${allCombinedKeywords.map(kw =>
+                kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // 转义
             ).join('|')})`,
             'gi'
         );
 
-        // 替换匹配到的关键词
         result = result.replace(regex, match => {
-            const className = `arch-${match.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-')}`;
+            const lowerMatch = match.toLowerCase();
+            const userKeywords = GM_getValue('userCustomKeywords', []);
+            const isUserKwd = userKeywords.some(kw => kw.text.toLowerCase() === lowerMatch);
+
+            let className = '';
+            if (isUserKwd) {
+                className = `user-kw-${lowerMatch.replace(/[^a-zA-Z0-9]/g, '-')}`;
+            } else {
+                className = `arch-${lowerMatch.replace(/[^a-zA-Z0-9]/g, '-')}`;
+            }
             return `<span class="arch-highlight ${className}">${match}</span>`;
         });
 
@@ -891,6 +1158,20 @@
                 fileExtension = extensionMatch[0].toLowerCase();
             }
 
+            // 智能边界检测关键词函数，防止类似 "darwin" 被误认为 "win"
+            const hasKeyword = (filename, keyword) => {
+                const lowerFileName = filename.toLowerCase();
+                const lowerKeyword = keyword.toLowerCase();
+                if (lowerKeyword.startsWith('.')) {
+                    return lowerFileName.includes(lowerKeyword);
+                }
+                // 使用非英文字母(^|[^a-z])作为左边界，和([^a-z]|$)作为右边界。
+                // 这样能保证像 win64, app-win, my_win 这种带数字和符号的都能正确匹配，同时防范纯字母粘连（如 darwin, emacs）
+                const escapedKeyword = lowerKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(`(^|[^a-z])${escapedKeyword}([^a-z]|$)`, 'i');
+                return regex.test(lowerFileName);
+            };
+
             // 优先检查文件扩展名
             for (const rule of iconRules) {
                 if (fileExtension && rule.keywords.some(keyword =>
@@ -904,7 +1185,7 @@
             if (!matchedRule && archiveExtensions.includes(fileExtension)) {
                 // 检查文件名中是否包含系统关键词
                 const systemMatch = systemKeywords.find(keyword =>
-                    fileNameLower.includes(keyword.toLowerCase()));
+                    hasKeyword(fileNameLower, keyword));
 
                 if (systemMatch) {
                     // 根据系统关键词匹配规则
@@ -918,7 +1199,7 @@
             if (!matchedRule) {
                 for (const rule of iconRules) {
                     if (rule.keywords.some(keyword =>
-                        fileNameLower.includes(keyword.toLowerCase()))) {
+                        hasKeyword(fileNameLower, keyword))) {
                         matchedRule = rule;
                         break;
                     }
@@ -1018,5 +1299,66 @@
         replaceIcons();
     }
     setupAssetsObserver();
+
+    // 初始化悬浮齿轮按钮
+    function createFloatingButton() {
+        if (document.getElementById('mgga-float-btn')) return;
+
+        const btn = document.createElement('div');
+        btn.id = 'mgga-float-btn';
+        btn.innerHTML = '⚙️';
+        btn.title = 'Make-GitHub-Great-Again 设置';
+        document.body.appendChild(btn);
+
+        let isDragging = false;
+        let startY, startTop;
+
+        const onMouseMove = (moveEvent) => {
+            const dy = moveEvent.clientY - startY;
+            if (Math.abs(dy) > 5) { // 稍微提高拖动判断阈值，防止点击时手抖误判为拖拽
+                isDragging = true;
+                btn.classList.add('is-dragging');
+                btn.style.top = `${startTop + dy}px`;
+            }
+        };
+
+        const onMouseUp = (e) => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+
+            setTimeout(() => {
+                btn.classList.remove('is-dragging');
+                setTimeout(() => { isDragging = false; }, 50);
+            }, 50); // 稍微延迟移除，避免释放瞬间立刻触发过渡动画导致闪烁
+        };
+
+        btn.addEventListener('mousedown', (e) => {
+            // 移除 e.preventDefault() 即可放行原生的点击行为
+            isDragging = false;
+            startY = e.clientY;
+            // 获得精确的中心 currentTop
+            const rect = btn.getBoundingClientRect();
+            startTop = rect.top + (rect.height / 2);
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+
+        // 重新改回通过纯正的 click 事件来判定
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation(); // 阻止事件冒泡到 document，防止触发对话框外部点击事件导致秒关
+            if (!isDragging) {
+                createColorPickerDialog();
+            }
+        });
+
+        // 如果面板已经是打开状态，按钮应该初始被隐藏
+        const dialog = document.querySelector('.color-picker-dialog.visible');
+        if (dialog) {
+            btn.classList.add('hidden-to-right');
+        }
+    }
+    createFloatingButton();
+
     // === END SVG Replace Functionality ===
 })();
