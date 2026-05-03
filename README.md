@@ -6,9 +6,9 @@
 
 这是一个简单而实用的浏览器脚本，通过为 GitHub Release 页面的每个 Asset 添加自定义颜色的背景色，并自动识别文件名中的系统架构关键词，更改文件图标为对应系统架构，使下载列表更加清晰易读，减少视觉疲劳，_**防止下载错误文件**_。
 
-![demo]https://greasyfork.org/rails/active_storage/blobs/redirect/eyJfcmFpbHMiOnsiZGF0YSI6MTgwOTA1LCJwdXIiOiJibG9iX2lkIn19--9a092f076ab9e141a88a4c0ec21746599ddae538/Honeycam%202025-06-21%2017-04-44.gif)
+![demo](https://greasyfork.org/rails/active_storage/blobs/redirect/eyJfcmFpbHMiOnsiZGF0YSI6MTgwOTA1LCJwdXIiOiJibG9iX2lkIn19--9a092f076ab9e141a88a4c0ec21746599ddae538/Honeycam%202025-06-21%2017-04-44.gif)
 
-![demo_cn](https://github.com/HumanMus1c/Make-GitHub-Great-Again/blob/main/demostrate_cn.gif)
+![demo_cn](https://github.com/HumanMus1c/Make-GitHub-Great-Again/blob/main/demonstrate_cn.gif)
 
 ## ✨ 主要功能
 
