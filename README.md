@@ -1,6 +1,6 @@
 # Make-GitHub-Great-Again!
 
-# [English Version](https://github.com/Make-GitHub-Great-Again/Make-GitHub-Great-Again/blob/main/README_en.md)
+# [English Version](https://github.com/HumanMus1c/Make-GitHub-Great-Again/blob/main/README_en.md)
 
 让 GitHub 更伟大!
 
