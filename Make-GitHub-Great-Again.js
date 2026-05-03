@@ -2,7 +2,7 @@
 // @name                    Make-GitHub-Great-Again
 // @name:en                 Make-GitHub-Great-Again
 // @namespace               https://github.com
-// @version                 5.0
+// @version                 5.1
 // @description             为 Release 的项目添加背景色，并识别文件系统平台类型，以及高亮自定义关键词
 // @description:en          Add background colors to each item in the Release Assets list, and identify the file system platform type and custom keywords for SVG icon replacement
 // @author                  https://github.com/HumanMus1c
@@ -16,6 +16,47 @@
 // ==/UserScript==
 
 (function () {
+  // 国际化配置
+  const i18n = {
+    isCN: navigator.language.startsWith("zh"),
+    t: function (key) {
+      const texts = {
+        settingsTitle: { zh: "⚙️ 设置", en: "⚙️ Settings" },
+        close: { zh: "关闭", en: "Close" },
+        oddRow: { zh: "设置奇数行颜色", en: "Set Odd Row Color" },
+        evenRow: { zh: "设置偶数行颜色", en: "Set Even Row Color" },
+        hoverRow: { zh: "设置悬停颜色", en: "Set Hover Color" },
+        svgIdentify: { zh: "识别系统平台", en: "Platform Identification" },
+        highlightTitle: { zh: "自定义高亮关键词", en: "Custom Highlight Keywords" },
+        newKeywordPlaceholder: { zh: "输入新关键词", en: "Enter new keyword" },
+        add: { zh: "添加", en: "Add" },
+        reset: { zh: "重置", en: "Reset" },
+        cancel: { zh: "取消", en: "Cancel" },
+        confirm: { zh: "确认", en: "Confirm" },
+        resetTitle: { zh: "重置为当前主题默认颜色", en: "Reset to theme default colors" },
+        enabledTitle: { zh: "已启用，点击禁用", en: "Enabled, click to disable" },
+        disabledTitle: { zh: "已禁用，点击启用", en: "Disabled, click to enable" },
+        promptOdd: { zh: "请输入奇数行背景色（HEX格式，如#f8f9fa）:", en: "Enter odd row background color (HEX, e.g., #f8f9fa):" },
+        promptEven: { zh: "请输入偶数行背景色（HEX格式，如#ffffff）:", en: "Enter even row background color (HEX, e.g., #ffffff):" },
+        promptHover: { zh: "请输入鼠标悬停颜色（HEX格式，如#e9ecef）:", en: "Enter hover color (HEX, e.g., #e9ecef):" },
+        confirmReset: { zh: "确定要重置 {theme} 主题的自定义颜色吗？", en: "Are you sure you want to reset the custom colors for {theme} theme?" },
+        darkTheme: { zh: "暗色", en: "Dark" },
+        lightTheme: { zh: "亮色", en: "Light" },
+        menuSettings: { zh: "⚙️ 设置", en: "⚙️ Settings" },
+        menuOdd: { zh: "⚙️ 设置奇数行颜色", en: "⚙️ Set Odd Row Color" },
+        menuEven: { zh: "⚙️ 设置偶数行颜色", en: "⚙️ Set Even Row Color" },
+        menuHover: { zh: "⚙️ 设置悬停行颜色", en: "⚙️ Set Hover Row Color" },
+        menuReset: { zh: "🔄 重置为默认颜色", en: "🔄 Reset to Default Colors" },
+        keywordColor: { zh: "关键词颜色", en: "Keyword Color" },
+        builtinPicker: { zh: "初始化内置颜色选择器...", en: "Initializing built-in color picker..." },
+        formatToggle: { zh: "点击切换颜色格式（HEX ↔ RGB ↔ HSL）", en: "Click to toggle format (HEX ↔ RGB ↔ HSL)" },
+        clear: { zh: "清除", en: "Clear" },
+        noKeywords: { zh: "暂无自定义关键词", en: "No custom keywords" }
+      };
+      return texts[key] ? (this.isCN ? texts[key].zh : texts[key].en) : key;
+    }
+  };
+
   // 更可靠的主题检测函数
   function getCurrentTheme() {
     // 检测GitHub的显式主题设置
@@ -111,7 +152,8 @@
     const versionStr =
       typeof GM_info !== "undefined" ? GM_info.script.version : "4.1";
     if (title) {
-      title.innerHTML = `⚙️ 设置 <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${versionStr}</span> <span style="font-size: 0.6em; font-weight: normal; opacity: 0.5;">(${currentTheme === "dark" ? "暗色主题" : "亮色主题"})</span>`;
+      const themeLabel = currentTheme === "dark" ? i18n.t("darkTheme") : i18n.t("lightTheme");
+      title.innerHTML = `${i18n.t("settingsTitle")} <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${versionStr}</span> <span style="font-size: 0.6em; font-weight: normal; opacity: 0.5;">(${themeLabel})</span>`;
     }
 
     // 更新颜色按钮
@@ -942,44 +984,44 @@
     dialog.className = "color-picker-dialog";
     dialog.innerHTML = `
             <div class="color-picker-header">
-                <h3 class="color-picker-title">⚙️ 设置 <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${typeof GM_info !== "undefined" ? GM_info.script.version : "4.1"}</span></h3>
-                <span class="color-picker-close" title="关闭">&times;</span>
+                <h3 class="color-picker-title">${i18n.t("settingsTitle")} <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${typeof GM_info !== "undefined" ? GM_info.script.version : "4.1"}</span></h3>
+                <span class="color-picker-close" title="${i18n.t("close")}">&times;</span>
             </div>
             <div class="color-picker-content">
                 <div class="color-picker-row">
-                    <span class="menu-command"><button class="color-toggle-btn" id="toggleOddRowBtn" title="禁用/启用奇数行上色">✓</button>设置奇数行颜色</span>
+                    <span class="menu-command"><button class="color-toggle-btn" id="toggleOddRowBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("oddRow")}</span>
                     <button class="color-button" id="oddRowColorBtn" style="background-color: ${customColors.oddRowColor}"></button>
                 </div>
                 <div class="color-picker-row">
-                    <span class="menu-command"><button class="color-toggle-btn" id="toggleEvenRowBtn" title="禁用/启用偶数行上色">✓</button>设置偶数行颜色</span>
+                    <span class="menu-command"><button class="color-toggle-btn" id="toggleEvenRowBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("evenRow")}</span>
                     <button class="color-button" id="evenRowColorBtn" style="background-color: ${customColors.evenRowColor}"></button>
                 </div>
                 <div class="color-picker-row">
-                    <span class="menu-command"><button class="color-toggle-btn" id="toggleHoverBtn" title="禁用/启用悬停上色">✓</button>设置悬停颜色</span>
+                    <span class="menu-command"><button class="color-toggle-btn" id="toggleHoverBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("hoverRow")}</span>
                     <button class="color-button" id="hoverColorBtn" style="background-color: ${customColors.hoverColor}"></button>
                 </div>
                 <div class="color-picker-row">
-                    <span class="menu-command"><button class="color-toggle-btn" id="svgToggleBtn" title="禁用/启用系统平台识别">✓</button>识别系统平台</span>
+                    <span class="menu-command"><button class="color-toggle-btn" id="svgToggleBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("svgIdentify")}</span>
                 </div>
                 <div style="margin-top: 0.75em; border-top: 1px solid rgba(125, 125, 125, 0.2); padding-top: 0.75em;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5em;">
-                        <span class="menu-command"><button class="color-toggle-btn" id="highlightToggleBtn" title="开启/关闭关键词高亮">✓</button>自定义高亮关键词</span>
+                        <span class="menu-command"><button class="color-toggle-btn" id="highlightToggleBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("highlightTitle")}</span>
                     </div>
                     <div id="customKeywordsContainer" style="max-height: 8.5em; overflow-y: auto; margin-bottom: 0.5em;">
                         <!-- 动态渲染关键词列表 -->
                     </div>
                     <div style="display: flex; gap: 0.5em; align-items: center;">
-                        <input type="text" id="newKeywordInput" placeholder="输入新关键词" style="flex: 1; padding: 0.4em; border-radius: 0.3em; border: 1px solid var(--arch-border, #d0d7de); background: transparent; color: inherit; font-size: 1em;">
+                        <input type="text" id="newKeywordInput" placeholder="${i18n.t("newKeywordPlaceholder")}" style="flex: 1; padding: 0.4em; border-radius: 0.3em; border: 1px solid var(--arch-border, #d0d7de); background: transparent; color: inherit; font-size: 1em;">
                         <button class="color-button" id="newKeywordColorBtn" style="background-color: #ffeb3b; width: 2.2em; height: 2.2em; padding: 0; border: 1px solid rgba(125,125,125,0.3); cursor: pointer; border-radius: 0.3em;"></button>
-                        <button id="addKeywordBtn" title="添加关键词" style="background: #2da44e; color: white; border: none; border-radius: 0.3em; padding: 0.4em 0.8em; cursor: pointer; font-weight: bold; font-size: var(--mgga-btn-scale);">添加</button>
+                        <button id="addKeywordBtn" title="${i18n.t("add")}" style="background: #2da44e; color: white; border: none; border-radius: 0.3em; padding: 0.4em 0.8em; cursor: pointer; font-weight: bold; font-size: var(--mgga-btn-scale);">${i18n.t("add")}</button>
                     </div>
                 </div>
 
                 <div class="button-row" style="margin-top: 1em;">
-        <button class="dialog-button reset-button" title="重置为当前主题默认颜色">重置</button>
+        <button class="dialog-button reset-button" title="${i18n.t("resetTitle")}">${i18n.t("reset")}</button>
           <div style="margin-left: auto; display: flex; gap: 0.75em;">
-            <button class="dialog-button cancel-button" id="cancelDialogBtn">取消</button>
-            <button class="dialog-button confirm-button" id="confirmDialogBtn">确认</button>
+            <button class="dialog-button cancel-button" id="cancelDialogBtn">${i18n.t("cancel")}</button>
+            <button class="dialog-button confirm-button" id="confirmDialogBtn">${i18n.t("confirm")}</button>
           </div>
         </div>
         `;
@@ -1043,7 +1085,7 @@
       const updateSvgBtnUI = (enabled) => {
         svgToggleBtn.classList.toggle("disabled", !enabled);
         svgToggleBtn.innerHTML = enabled ? "✓" : "✕";
-        svgToggleBtn.title = enabled ? "已启用，点击禁用" : "已禁用，点击启用";
+        svgToggleBtn.title = enabled ? i18n.t("enabledTitle") : i18n.t("disabledTitle");
       };
 
       updateSvgBtnUI(isSvgEnabled);
@@ -1068,8 +1110,8 @@
         highlightToggleBtn.classList.toggle("disabled", !enabled);
         highlightToggleBtn.innerHTML = enabled ? "✓" : "✕";
         highlightToggleBtn.title = enabled
-          ? "已启用，点击禁用"
-          : "已禁用，点击启用";
+          ? i18n.t("enabledTitle")
+          : i18n.t("disabledTitle");
       };
 
       updateHighlightBtnUI(isHighlightEnabled);
@@ -1265,7 +1307,7 @@
 
       // 初始化内置颜色选择器（无需外部库）
       const initializeLibraries = () => {
-        console.log("[MGGA] 初始化内置颜色选择器...");
+        console.log(`[MGGA] ${i18n.t("builtinPicker")}`);
 
         const hsl = hexToHSL(defaultColor);
 
@@ -1299,16 +1341,16 @@
                         <div class="builtin-picker-bottom-section">
                             <!-- 颜色输入框 + 清除按钮 -->
                             <div class="builtin-input-group">
-                                <button class="builtin-format-toggle-btn" title="点击切换颜色格式（HEX ↔ RGB ↔ HSL）">HEX</button>
+                                <button class="builtin-format-toggle-btn" title="${i18n.t("formatToggle")}">HEX</button>
                                 <!-- HEX单输入框 -->
                                 <input type="text" class="builtin-color-hex-input builtin-hex-single-input" value="${defaultColor}" maxlength="7" placeholder="#000000" />
                                 <!-- RGB/HSL三输入框容器 -->
                                 <div class="builtin-multi-input-container" style="display: none;">
-                                    <input type="text" class="builtin-color-value-input builtin-input-1" placeholder="值1" maxlength="3" />
-                                    <input type="text" class="builtin-color-value-input builtin-input-2" placeholder="值2" maxlength="3" />
-                                    <input type="text" class="builtin-color-value-input builtin-input-3" placeholder="值3" maxlength="3" />
+                                    <input type="text" class="builtin-color-value-input builtin-input-1" placeholder="Val1" maxlength="3" />
+                                    <input type="text" class="builtin-color-value-input builtin-input-2" placeholder="Val2" maxlength="3" />
+                                    <input type="text" class="builtin-color-value-input builtin-input-3" placeholder="Val3" maxlength="3" />
                                 </div>
-                                <button class="builtin-clear-btn" title="清除">✕</button>
+                                <button class="builtin-clear-btn" title="${i18n.t("clear")}">✕</button>
                             </div>
 
                             <!-- 预设颜色 -->
@@ -1986,7 +2028,7 @@
 
       if (activeKeywords.length === 0) {
         container.innerHTML =
-          '<div style="color: gray; font-size: 0.9em; text-align: center; padding: 0.5em 0;">暂无自定义关键词</div>';
+          `<div style="color: gray; font-size: 0.9em; text-align: center; padding: 0.5em 0;">${i18n.t("noKeywords")}</div>`;
         return;
       }
 
@@ -2025,7 +2067,7 @@
         e.stopPropagation();
         toggleColorPickerPanel(
           newKeywordColorBtn,
-          "关键词颜色",
+          i18n.t("keywordColor"),
           newKeywordColorBtn.style.backgroundColor || "#ffeb3b",
         );
       });
@@ -2242,10 +2284,10 @@
   }
 
   // 注册油猴菜单选项
-  GM_registerMenuCommand("⚙️ 设置", createColorPickerDialog);
+  GM_registerMenuCommand(i18n.t("menuSettings"), createColorPickerDialog);
 
   // 独立的菜单命令
-  GM_registerMenuCommand("⚙️ 设置奇数行颜色", () => {
+  GM_registerMenuCommand(i18n.t("menuOdd"), () => {
     const currentTheme = getCurrentTheme();
     const themeKey = `customColors${currentTheme.charAt(0).toUpperCase() + currentTheme.slice(1)}`;
     const customColors = GM_getValue(themeKey, null);
@@ -2257,7 +2299,7 @@
       : defaultColors.oddRowColor;
 
     const newColor = prompt(
-      "请输入奇数行背景色（HEX格式，如#f8f9fa）:",
+      i18n.t("promptOdd"),
       currentColor,
     );
     if (newColor) {
@@ -2273,7 +2315,7 @@
     }
   });
 
-  GM_registerMenuCommand("⚙️ 设置偶数行颜色", () => {
+  GM_registerMenuCommand(i18n.t("menuEven"), () => {
     const currentTheme = getCurrentTheme();
     const themeKey = `customColors${currentTheme.charAt(0).toUpperCase() + currentTheme.slice(1)}`;
     const customColors = GM_getValue(themeKey, null);
@@ -2285,7 +2327,7 @@
       : defaultColors.evenRowColor;
 
     const newColor = prompt(
-      "请输入偶数行背景色（HEX格式，如#ffffff）:",
+      i18n.t("promptEven"),
       currentColor,
     );
     if (newColor) {
@@ -2301,7 +2343,7 @@
     }
   });
 
-  GM_registerMenuCommand("⚙️ 设置悬停行颜色", () => {
+  GM_registerMenuCommand(i18n.t("menuHover"), () => {
     const currentTheme = getCurrentTheme();
     const themeKey = `customColors${currentTheme.charAt(0).toUpperCase() + currentTheme.slice(1)}`;
     const customColors = GM_getValue(themeKey, null);
@@ -2313,7 +2355,7 @@
       : defaultColors.hoverColor;
 
     const newColor = prompt(
-      "请输入鼠标悬停颜色（HEX格式，如#e9ecef）:",
+      i18n.t("promptHover"),
       currentColor,
     );
     if (newColor) {
@@ -2330,12 +2372,13 @@
   });
 
   // 重置为当前主题的默认颜色
-  GM_registerMenuCommand("🔄 重置为默认颜色", () => {
+  GM_registerMenuCommand(i18n.t("menuReset"), () => {
     const currentTheme = getCurrentTheme();
+    const themeLabel = currentTheme === "dark" ? i18n.t("darkTheme") : i18n.t("lightTheme");
 
     if (
       confirm(
-        `确定要重置${currentTheme === "dark" ? "暗色" : "亮色"}主题的自定义颜色吗？`,
+        i18n.t("confirmReset").replace("{theme}", themeLabel),
       )
     ) {
       // 删除当前主题的自定义颜色设置
