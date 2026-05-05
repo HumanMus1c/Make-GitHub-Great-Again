@@ -8,7 +8,7 @@ This is a simple and practical browser script that adds custom background colors
 
 ![demo](https://greasyfork.org/rails/active_storage/blobs/redirect/eyJfcmFpbHMiOnsiZGF0YSI6MTgwOTA1LCJwdXIiOiJibG9iX2lkIn19--9a092f076ab9e141a88a4c0ec21746599ddae538/Honeycam%202025-06-21%2017-04-44.gif)
 
-![demo_en](https://github.com/HumanMus1c/Make-GitHub-Great-Again/blob/main/demonstrate_en.gif)
+![demo_en](https://greasyfork.org/rails/active_storage/blobs/redirect/eyJfcmFpbHMiOnsiZGF0YSI6MjkyMjUyLCJwdXIiOiJibG9iX2lkIn19--34932e203f19d08e880d94fa4eaa3ccebc540fb1/demonstrate_en_1mb.gif)
 
 ## ✨ Main Features
 

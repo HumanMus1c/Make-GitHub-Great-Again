@@ -8,7 +8,8 @@
 
 ![demo](https://greasyfork.org/rails/active_storage/blobs/redirect/eyJfcmFpbHMiOnsiZGF0YSI6MTgwOTA1LCJwdXIiOiJibG9iX2lkIn19--9a092f076ab9e141a88a4c0ec21746599ddae538/Honeycam%202025-06-21%2017-04-44.gif)
 
-![demo_cn](https://github.com/HumanMus1c/Make-GitHub-Great-Again/blob/main/demonstrate_cn.gif)
+![demo_cn](https://greasyfork.org/rails/active_storage/blobs/redirect/eyJfcmFpbHMiOnsiZGF0YSI6MjkyMjUxLCJwdXIiOiJibG9iX2lkIn19--60a7cfd4d30f706894e00e827121bb4d1cd083f3/demonstrate_cn_1mb.gif)
+
 
 ## ✨ 主要功能
 

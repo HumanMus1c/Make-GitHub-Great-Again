@@ -2,7 +2,7 @@
 // @name                    Make-GitHub-Great-Again
 // @name:en                 Make-GitHub-Great-Again
 // @namespace               https://github.com
-// @version                 5.1
+// @version                 5.2
 // @description             为 Release 的项目添加背景色，并识别文件系统平台类型，以及高亮自定义关键词
 // @description:en          Add background colors to each item in the Release Assets list, and identify the file system platform type and custom keywords for SVG icon replacement
 // @author                  https://github.com/HumanMus1c
@@ -1841,11 +1841,18 @@
     const toggleColorPickerPanel = (colorBtn, colorName, defaultColor) => {
       // 关闭其他开放的面板
       document.querySelectorAll(".custom-color-picker-panel").forEach((p) => {
-        if (p !== colorBtn._panel) p.remove();
+        if (p._closeHandler) {
+          document.removeEventListener("click", p._closeHandler);
+        }
+        p.remove();
+        // 如果面板有关联的按钮，清除引用
+        if (p._associatedBtn) {
+          p._associatedBtn._panel = null;
+        }
       });
 
       if (colorBtn._panel && document.body.contains(colorBtn._panel)) {
-        colorBtn._panel.remove();
+        // 如果点击的是已经打开的按钮，上面的逻辑已经关闭它了，这里不需要额外操作
         colorBtn._panel = null;
       } else {
         let panel;
@@ -1855,6 +1862,7 @@
           console.error("[MGGA] createColorPickerPanel error:", err);
           return;
         }
+        panel._associatedBtn = colorBtn; // 建立双向引用以便清理
         const rect = colorBtn.getBoundingClientRect();
 
         // 智能定位，避免超出屏幕
@@ -1892,26 +1900,17 @@
         // 点击其他地方关闭面板
         const closeHandler = (e) => {
           // 检查是否点击了颜色按钮本身，如果是则不关闭（因为会再次打开）
-          if (e.target === colorBtn) return;
+          if (e.target === colorBtn || colorBtn.contains(e.target)) return;
 
           // 检查是否在面板内部点击
           if (panel.contains(e.target)) return;
 
-          // 如果点击在对话框内部但不在面板内，需要延迟一下，给对话框关闭逻辑时间反应
-          // 这样确保不会同时关闭多个面板
-          if (dialog && dialog.contains(e.target)) {
-            // 清除当前面板的引用
-            panel.remove();
-            colorBtn._panel = null;
-            document.removeEventListener("click", closeHandler);
-            return;
-          }
-
-          // 点击在对话框外部
+          // 执行关闭
           panel.remove();
           colorBtn._panel = null;
           document.removeEventListener("click", closeHandler);
         };
+        panel._closeHandler = closeHandler; // 保存引用以便外部清理
         setTimeout(() => document.addEventListener("click", closeHandler), 0);
       }
     };
@@ -2263,6 +2262,14 @@
   function closeDialog(dialog) {
     // 移除可见类触发滑出动画
     dialog.classList.remove("visible");
+
+    // 同时关闭所有打开的颜色选择器子面板
+    document.querySelectorAll(".custom-color-picker-panel").forEach((p) => {
+      if (p._closeHandler) {
+        document.removeEventListener("click", p._closeHandler);
+      }
+      p.remove();
+    });
 
     // 恢复悬浮按钮
     const floatBtn = document.getElementById("mgga-float-btn");
