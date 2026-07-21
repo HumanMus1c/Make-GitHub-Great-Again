@@ -2,7 +2,7 @@
 // @name                    Make-GitHub-Great-Again
 // @name:en                 Make-GitHub-Great-Again
 // @namespace               https://github.com
-// @version                 5.2.1
+// @version                 5.3.0
 // @description             为 Release 的项目添加背景色，识别文件系统平台类型，以及高亮自定义关键词
 // @description:en          Add background colors to each Release Asset, identify the file system platform type and custom keywords highlighter.
 // @author                  https://github.com/HumanMus1c
@@ -21,7 +21,7 @@
     isCN: navigator.language.startsWith("zh"),
     t: function (key) {
       const texts = {
-        settingsTitle: { zh: "⚙️ 设置", en: "⚙️ Settings" },
+        settingsTitle: { zh: "MGGA", en: "MGGA" },
         close: { zh: "关闭", en: "Close" },
         oddRow: { zh: "设置奇数行颜色", en: "Set Odd Row Color" },
         evenRow: { zh: "设置偶数行颜色", en: "Set Even Row Color" },
@@ -51,7 +51,10 @@
         builtinPicker: { zh: "初始化内置颜色选择器...", en: "Initializing built-in color picker..." },
         formatToggle: { zh: "点击切换颜色格式（HEX ↔ RGB ↔ HSL）", en: "Click to toggle format (HEX ↔ RGB ↔ HSL)" },
         clear: { zh: "清除", en: "Clear" },
-        noKeywords: { zh: "暂无自定义关键词", en: "No custom keywords" }
+        noKeywords: { zh: "暂无自定义关键词", en: "No custom keywords" },
+        defaultTag: { zh: "默认", en: "Default" },
+        restore: { zh: "恢复", en: "Restore" },
+        deleteRule: { zh: "删除", en: "Delete" }
       };
       return texts[key] ? (this.isCN ? texts[key].zh : texts[key].en) : key;
     }
@@ -153,7 +156,7 @@
       typeof GM_info !== "undefined" ? GM_info.script.version : "4.1";
     if (title) {
       const themeLabel = currentTheme === "dark" ? i18n.t("darkTheme") : i18n.t("lightTheme");
-      title.innerHTML = `${i18n.t("settingsTitle")} <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${versionStr}</span> <span style="font-size: 0.6em; font-weight: normal; opacity: 0.5;">(${themeLabel})</span>`;
+      title.innerHTML = `<svg viewBox="0 0 16 16" width="1.1em" height="1.1em" fill="currentColor" style="vertical-align:-0.15em"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg> ${i18n.t("settingsTitle")} <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${versionStr}</span> <span style="font-size: 0.6em; font-weight: normal; opacity: 0.5;">(${themeLabel})</span>`;
     }
 
     // 更新颜色按钮
@@ -217,7 +220,7 @@
             padding: 1.25em;
             box-shadow: 0 0.15em 1.5em rgba(0,0,0,0.2);
             z-index: 10000;
-            min-width: max-content !important;
+            min-width: 0 !important; max-width: min(20em, 90vw);
             font-family: inherit; /* 继承页面字体 */
             font-size: var(--mgga-text-scale); /* 文本字体总体缩放 */
 
@@ -500,43 +503,106 @@
         }
 
         /* 自定义关键词高亮样式 */
-        .custom-keyword-item {
+        #customKeywordsContainer {
             display: flex;
+            flex-wrap: wrap;
+            gap: 0.4em;
+            align-content: flex-start;
+        }
+
+        .custom-keyword-item {
+            display: inline-flex;
             align-items: center;
-            justify-content: space-between;
-            padding: 0.4em 0.6em;
+            gap: 0.35em;
+            padding: 0.25em 0.45em;
             background: rgba(125, 125, 125, 0.1);
             border-radius: 0.3em;
-            margin-bottom: 0.4em;
             font-size: 0.9em;
+            width: fit-content;
+            max-width: 100%;
         }
 
         .custom-keyword-item .keyword-text {
             font-weight: bold;
-            flex-grow: 1;
+            white-space: nowrap;
         }
 
-        .custom-keyword-item .keyword-color {
-            width: 1.25em;
-            height: 1.25em;
+        .custom-keyword-item .keyword-color-swatch {
+            width: 1.1em;
+            height: 1.1em;
+            min-width: 1.1em;
             border-radius: 0.3em;
-            margin: 0 0.5em;
             border: 1px solid rgba(125, 125, 125, 0.3);
             flex-shrink: 0;
+            cursor: pointer;
+            padding: 0;
+            margin: 0;
+            box-shadow: none;
+            display: inline-block;
+        }
+
+        .custom-keyword-item .keyword-action-btn {
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1em;
+            line-height: 1;
+            padding: 0 0.25em;
+            border-radius: 0.2em;
+            flex-shrink: 0;
+            user-select: none;
         }
 
         .custom-keyword-item .keyword-remove {
             color: #d73a49;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 1.1em;
         }
 
         .custom-keyword-item .keyword-remove:hover {
             color: #cb2431;
         }
 
-        .color-toggle-btn {
+        .custom-keyword-item .keyword-restore {
+            color: #2da44e;
+        }
+
+        .custom-keyword-item .keyword-restore:hover {
+            color: #218838;
+        }
+
+        .custom-keyword-item.pending-delete {
+            background: rgba(215, 58, 73, 0.1);
+            opacity: 0.65;
+        }
+
+        .custom-keyword-item.pending-delete .keyword-text {
+            text-decoration: line-through;
+            font-weight: normal;
+        }
+
+        .custom-keyword-item.default-keyword-item {
+            background: rgba(125, 125, 125, 0.04);
+        }
+
+        .custom-keyword-item .keyword-default-tag {
+            font-size: 0.68em;
+            font-weight: bold;
+            padding: 0.1em 0.45em;
+            border-radius: 0.3em;
+            background: #0969da;
+            color: #fff;
+            flex-shrink: 0;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
+        }
+
+        #customKeywordsContainer .keyword-empty-hint {
+            width: 100%;
+            color: gray;
+            font-size: 0.9em;
+            text-align: center;
+            padding: 0.5em 0;
+        }
+
+        #newKeywordInput { min-width: 0; } #newKeywordColorBtn { flex-shrink: 0; } #addKeywordBtn { white-space: nowrap; flex-shrink: 0; } .color-toggle-btn {
             font-size: var(--mgga-btn-scale);
             width: 1.8em;
             height: 1.8em;
@@ -984,7 +1050,7 @@
     dialog.className = "color-picker-dialog";
     dialog.innerHTML = `
             <div class="color-picker-header">
-                <h3 class="color-picker-title">${i18n.t("settingsTitle")} <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${typeof GM_info !== "undefined" ? GM_info.script.version : "4.1"}</span></h3>
+                <h3 class="color-picker-title"><svg viewBox="0 0 16 16" width="1.1em" height="1.1em" fill="currentColor" style="vertical-align:-0.15em"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg> ${i18n.t("settingsTitle")} <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${typeof GM_info !== "undefined" ? GM_info.script.version : "4.1"}</span></h3>
                 <span class="color-picker-close" title="${i18n.t("close")}">&times;</span>
             </div>
             <div class="color-picker-content">
@@ -1007,7 +1073,7 @@
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5em;">
                         <span class="menu-command"><button class="color-toggle-btn" id="highlightToggleBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("highlightTitle")}</span>
                     </div>
-                    <div id="customKeywordsContainer" style="max-height: 8.5em; overflow-y: auto; margin-bottom: 0.5em;">
+                    <div id="customKeywordsContainer" style="max-height: 16em; overflow-y: auto; margin-bottom: 0.5em;">
                         <!-- 动态渲染关键词列表 -->
                     </div>
                     <div style="display: flex; gap: 0.5em; align-items: center;">
@@ -1145,7 +1211,7 @@
       getCurrentTheme() === "dark" ? defaultColorsDark : defaultColorsLight;
 
     // 创建自定义color picker子面板
-    const createColorPickerPanel = (colorBtn, colorName, defaultColor) => {
+    const createColorPickerPanel = (colorBtn, colorName, defaultColor, onChange) => {
       const panel = document.createElement("div");
       panel.className = "custom-color-picker-panel";
       panel.innerHTML = `
@@ -1188,6 +1254,9 @@
           colorBtn.style.backgroundColor = newColor;
           colorBtn.title = `${colorName}: ${newColor}`; // 实时更新按钮提示文字
         }
+
+        // 通知外部（如关键词规则）颜色已变更
+        if (typeof onChange === "function") onChange(newColor);
 
         // 实时刷新页面样式
         if (typeof refreshRealtimeStyles === "function") {
@@ -1838,7 +1907,7 @@
     };
 
     // 打开/关闭color picker子面板
-    const toggleColorPickerPanel = (colorBtn, colorName, defaultColor) => {
+    const toggleColorPickerPanel = (colorBtn, colorName, defaultColor, onChange, onClose) => {
       // 关闭其他开放的面板
       document.querySelectorAll(".custom-color-picker-panel").forEach((p) => {
         if (p._closeHandler) {
@@ -1857,7 +1926,7 @@
       } else {
         let panel;
         try {
-          panel = createColorPickerPanel(colorBtn, colorName, defaultColor);
+          panel = createColorPickerPanel(colorBtn, colorName, defaultColor, onChange);
         } catch (err) {
           console.error("[MGGA] createColorPickerPanel error:", err);
           return;
@@ -1909,6 +1978,7 @@
           panel.remove();
           colorBtn._panel = null;
           document.removeEventListener("click", closeHandler);
+          if (typeof onClose === "function") onClose();
         };
         panel._closeHandler = closeHandler; // 保存引用以便外部清理
         setTimeout(() => document.addEventListener("click", closeHandler), 0);
@@ -2018,36 +2088,144 @@
     });
 
     // 处理自定义关键词列表的渲染
-    let activeKeywords = GM_getValue("userCustomKeywords", []);
+    const deletedDefaults = GM_getValue("deletedDefaults", []);
+    const defaultColorOverrides = GM_getValue("defaultColorOverrides", {});
+    let rules = [
+      ...archKeywords
+        .filter((arch) => !deletedDefaults.includes(arch))
+        .map((arch) => ({
+          text: arch,
+          color: defaultColorOverrides[arch] || null,
+          isDefault: true,
+          isOverridden: !!defaultColorOverrides[arch],
+          pendingDelete: false,
+        })),
+      ...GM_getValue("userCustomKeywords", []).map((kw) => ({
+        text: kw.text,
+        color: kw.color,
+        isDefault: false,
+        isOverridden: false,
+        pendingDelete: false,
+      })),
+    ];
+
+    const archClassNameOf = (text) =>
+      `arch-${text.toLowerCase().replace(/[^a-zA-Z0-9]/g, "-")}`;
+
+    const clearPendingDeletes = (rerender = true) => {
+      let changed = false;
+      rules.forEach((r) => {
+        if (r.pendingDelete) {
+          r.pendingDelete = false;
+          changed = true;
+        }
+      });
+      if (changed && rerender) renderKeywords();
+    };
+
+    const regenerateHighlight = () => {
+      const existingStyle = document.getElementById("MGGA-custom-arch-style");
+      if (existingStyle) existingStyle.remove();
+      if (typeof window.initializeArchStyles === "function") {
+        window.initializeArchStyles();
+      }
+      if (typeof processAssets === "function") {
+        document
+          .querySelectorAll(".Box.Box--condensed li.Box-row")
+          .forEach((item) => {
+            if (item.dataset.highlightProcessed === "true") {
+              const link = item.querySelector(
+                "div.d-flex.flex-justify-start.col-12.col-lg-6 > a",
+              );
+              if (link && item._originalFileName) {
+                link.innerHTML = item._originalFileName;
+              }
+              item.dataset.highlightProcessed = "false";
+            }
+          });
+        setTimeout(() => processAssets(), 10);
+      }
+    };
 
     const renderKeywords = () => {
       const container = dialog.querySelector("#customKeywordsContainer");
       if (!container) return;
       container.innerHTML = "";
 
-      if (activeKeywords.length === 0) {
-        container.innerHTML =
-          `<div style="color: gray; font-size: 0.9em; text-align: center; padding: 0.5em 0;">${i18n.t("noKeywords")}</div>`;
+      if (rules.length === 0) {
+        const emptyHint = document.createElement("div");
+        emptyHint.className = "keyword-empty-hint";
+        emptyHint.textContent = i18n.t("noKeywords");
+        container.appendChild(emptyHint);
         return;
       }
 
-      activeKeywords.forEach((kw, index) => {
+      rules.forEach((rule, index) => {
         const item = document.createElement("div");
-        item.className = "custom-keyword-item";
+        const classes = ["custom-keyword-item"];
+        if (rule.isDefault) classes.push("default-keyword-item");
+        if (rule.pendingDelete) classes.push("pending-delete");
+        item.className = classes.join(" ");
+
+        const useAutoColor = rule.isDefault && !rule.isOverridden;
+        const swatchClass = useAutoColor
+          ? `keyword-color-swatch arch-highlight ${archClassNameOf(rule.text)}`
+          : "keyword-color-swatch";
+        const swatchStyle = useAutoColor
+          ? ""
+          : `background-color: ${rule.color || "#ffeb3b"};`;
+        const actionClass = rule.pendingDelete
+          ? "keyword-action-btn keyword-restore"
+          : "keyword-action-btn keyword-remove";
+        const actionIcon = rule.pendingDelete ? "↩" : "×";
+        const actionTitle = rule.pendingDelete
+          ? i18n.t("restore")
+          : i18n.t("deleteRule");
+
         item.innerHTML = `
-                    <span class="keyword-text">${kw.text}</span>
-                    <span class="keyword-color" style="background-color: ${kw.color}"></span>
-                    <span class="keyword-remove" data-index="${index}" title="删除">&times;</span>
+                    <span class="${swatchClass}" style="${swatchStyle}" data-swatch="${index}" title="${i18n.t("keywordColor")}"></span>
+                    <span class="keyword-text">${rule.text}</span>
+                    ${rule.isDefault ? `<span class="keyword-default-tag">${i18n.t("defaultTag")}</span>` : ""}
+                    <span class="${actionClass}" data-action="${index}" title="${actionTitle}">${actionIcon}</span>
                 `;
         container.appendChild(item);
       });
 
-      // 绑定删除事件
-      container.querySelectorAll(".keyword-remove").forEach((btn) => {
+      // 颜色编辑：点击色块
+      container.querySelectorAll(".keyword-color-swatch").forEach((sw) => {
+        sw.addEventListener("click", (e) => {
+          e.stopPropagation();
+          clearPendingDeletes(false);
+          const idx = parseInt(sw.dataset.swatch);
+          const rule = rules[idx];
+          if (!rule) return;
+          const startColor =
+            rule.isOverridden || !rule.isDefault
+              ? rule.color || "#ffeb3b"
+              : window.getComputedStyle(sw).backgroundColor || "#ffeb3b";
+          toggleColorPickerPanel(
+            sw,
+            i18n.t("keywordColor"),
+            startColor,
+            (newColor) => {
+              rule.color = newColor;
+              rule.isOverridden = true;
+            },
+            () => {
+              renderKeywords();
+            },
+          );
+        });
+      });
+
+      // 删除/恢复：点击操作按钮
+      container.querySelectorAll(".keyword-action-btn").forEach((btn) => {
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
-          const idx = parseInt(e.target.dataset.index);
-          activeKeywords.splice(idx, 1);
+          const idx = parseInt(btn.dataset.action);
+          const rule = rules[idx];
+          if (!rule) return;
+          rule.pendingDelete = !rule.pendingDelete;
           renderKeywords();
         });
       });
@@ -2075,6 +2253,7 @@
     if (addKeywordBtn && newKeywordInput && newKeywordColorBtn) {
       addKeywordBtn.addEventListener("click", (e) => {
         e.stopPropagation();
+        clearPendingDeletes();
         const text = newKeywordInput.value.trim();
         const color =
           newKeywordColorBtn.style.backgroundColor || "#ffeb3b";
@@ -2098,13 +2277,21 @@
         const hexColor = rgbToHex(color);
 
         if (text) {
-          const existingIndex = activeKeywords.findIndex(
+          const existingIndex = rules.findIndex(
             (kw) => kw.text.toLowerCase() === text.toLowerCase(),
           );
           if (existingIndex !== -1) {
-            activeKeywords[existingIndex].color = hexColor;
+            rules[existingIndex].color = hexColor;
+            rules[existingIndex].isOverridden = true;
+            rules[existingIndex].pendingDelete = false;
           } else {
-            activeKeywords.push({ text, color: hexColor });
+            rules.push({
+              text,
+              color: hexColor,
+              isDefault: false,
+              isOverridden: false,
+              pendingDelete: false,
+            });
           }
 
           newKeywordInput.value = "";
@@ -2168,39 +2355,55 @@
       GM_setValue("colorToggleEven", colorToggleState.even);
       GM_setValue("colorToggleHover", colorToggleState.hover);
 
-      // 保存自定义关键词状态
-      GM_setValue("userCustomKeywords", activeKeywords);
+      // 保存关键词规则（含预设的删除/颜色覆盖与用户规则）
+      const savedUserKeywords = [];
+      const savedOverrides = {};
+      const savedDeletedDefaults = [...GM_getValue("deletedDefaults", [])];
+      rules.forEach((r) => {
+        if (r.pendingDelete) {
+          if (r.isDefault) {
+            if (!savedDeletedDefaults.includes(r.text)) {
+              savedDeletedDefaults.push(r.text);
+            }
+          }
+        } else {
+          if (r.isDefault) {
+            if (r.isOverridden && r.color) {
+              savedOverrides[r.text] = rgbToHex(r.color) || r.color;
+            }
+          } else {
+            savedUserKeywords.push({
+              text: r.text,
+              color: rgbToHex(r.color) || r.color || "#ffeb3b",
+            });
+          }
+        }
+      });
+      GM_setValue("userCustomKeywords", savedUserKeywords);
+      GM_setValue("defaultColorOverrides", savedOverrides);
+      GM_setValue("deletedDefaults", savedDeletedDefaults);
 
       closeDialog(dialog);
       applyColors(); // 动态更新颜色
 
-      // 重新应用高亮及图标（恢复后再替换以刷新高亮）
-      if (typeof processAssets === "function") {
-        // 强制还原原版文本以便刷新高亮
-        const assetItems = document.querySelectorAll(
-          ".Box.Box--condensed li.Box-row",
-        );
-        assetItems.forEach((item) => {
-          if (item.dataset.highlightProcessed === "true") {
-            const link = item.querySelector(
-              "div.d-flex.flex-justify-start.col-12.col-lg-6 > a",
-            );
-            if (link && item._originalFileName) {
-              link.innerHTML = item._originalFileName;
-            }
-            item.dataset.highlightProcessed = "false";
-          }
-        });
-
-        // 强制重新生成样式并重新高亮
-        const existingStyle = document.getElementById("MGGA-custom-arch-style");
-        if (existingStyle) existingStyle.remove();
-        if (typeof window.initializeArchStyles === "function") {
-          window.initializeArchStyles();
-        }
-        setTimeout(() => processAssets(), 10);
-      }
+      // 重新应用高亮及图标
+      regenerateHighlight();
     });
+
+    // 点击其它按钮（非删除/恢复/确认）时撤销"待删除"标记
+    dialog.addEventListener(
+      "click",
+      (e) => {
+        const btn = e.target.closest("button");
+        if (!btn) return;
+        if (btn.closest(".keyword-action-btn")) return;
+        if (btn.id === "confirmDialogBtn") return;
+        if (rules.some((r) => r.pendingDelete)) {
+          clearPendingDeletes();
+        }
+      },
+      true,
+    );
 
     // 添加ESC键关闭支持
     const handleEsc = function (e) {
@@ -2226,6 +2429,10 @@
         target = target.parentElement;
       }
       if (dialog && !dialog.contains(e.target)) {
+        if (rules.some((r) => r.pendingDelete)) {
+          clearPendingDeletes();
+          return;
+        }
         closeDialog(dialog);
       }
     };
@@ -2604,6 +2811,13 @@
     let currentHue = 0.4; // 初始色相
     let x86_64Hue = null; // 保存 x86_64 的色相值
 
+    const deletedDefaults = GM_getValue("deletedDefaults", []);
+    const defaultColorOverrides = GM_getValue("defaultColorOverrides", {});
+    const overriddenDefaults = Object.keys(defaultColorOverrides).map((text) => ({
+      text,
+      color: defaultColorOverrides[text],
+    }));
+
     archKeywords.forEach((arch) => {
       let hue;
       if (arch.toLowerCase() === "amd64") {
@@ -2647,6 +2861,13 @@
         hue = Math.floor(currentHue * 360);
       }
 
+      // 已删除或已自定义颜色的默认关键词：跳过自动配色（仍推进色相状态以保持其余配色不变）
+      if (
+        deletedDefaults.includes(arch) ||
+        Object.prototype.hasOwnProperty.call(defaultColorOverrides, arch)
+      )
+        return;
+
       const className = `arch-${arch.toLowerCase().replace(/[^a-zA-Z0-9]/g, "-")}`;
 
       dynamicStyles += `
@@ -2671,10 +2892,11 @@
             `;
     });
 
-    // 处理自定义关键词
+    // 处理自定义关键词（含已自定义颜色的默认关键词）
     const userKeywords = GM_getValue("userCustomKeywords", []);
+    const customColorRules = [...overriddenDefaults, ...userKeywords];
 
-    userKeywords.forEach((kw) => {
+    customColorRules.forEach((kw) => {
       const className = `user-kw-${kw.text.toLowerCase().replace(/[^a-zA-Z0-9]/g, "-")}`;
       const bgColor = kw.color;
       // 简单判断对比度给予适当字体颜色以防看不清
@@ -2695,10 +2917,15 @@
     style.textContent = baseStyles + dynamicStyles;
     document.head.appendChild(style);
 
-    // 更新词典
+    // 更新词典：自定义颜色规则 + 未删除的默认架构关键词
+    const activeArchKeywords = archKeywords.filter(
+      (arch) =>
+        !deletedDefaults.includes(arch) &&
+        !Object.prototype.hasOwnProperty.call(defaultColorOverrides, arch),
+    );
     allCombinedKeywords = [
-      ...userKeywords.map((k) => k.text),
-      ...archKeywords,
+      ...customColorRules.map((k) => k.text),
+      ...activeArchKeywords,
     ].sort((a, b) => b.length - a.length); // 确保长词优先匹配
   };
 
@@ -2726,12 +2953,16 @@
     result = result.replace(regex, (match) => {
       const lowerMatch = match.toLowerCase();
       const userKeywords = GM_getValue("userCustomKeywords", []);
-      const isUserKwd = userKeywords.some(
-        (kw) => kw.text.toLowerCase() === lowerMatch,
-      );
+      const defaultColorOverrides = GM_getValue("defaultColorOverrides", {});
+      const isCustomKwd =
+        userKeywords.some((kw) => kw.text.toLowerCase() === lowerMatch) ||
+        Object.prototype.hasOwnProperty.call(
+          defaultColorOverrides,
+          lowerMatch,
+        );
 
       let className = "";
-      if (isUserKwd) {
+      if (isCustomKwd) {
         className = `user-kw-${lowerMatch.replace(/[^a-zA-Z0-9]/g, "-")}`;
       } else {
         className = `arch-${lowerMatch.replace(/[^a-zA-Z0-9]/g, "-")}`;
