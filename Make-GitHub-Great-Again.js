@@ -3125,11 +3125,21 @@
   }
 
   // 设置观察器监听assets列表变化
+  let assetsObserver = null;
   function setupAssetsObserver() {
-    const targetNode =
-      document.getElementById("repo-content-pjax-container") || document.body;
+    // 断开旧观察器，防止 SPA 导航时内存泄漏
+    if (assetsObserver) {
+      assetsObserver.disconnect();
+      assetsObserver = null;
+    }
 
-    const observer = new MutationObserver((mutations) => {
+    // 兼容 Turbo (turbo-frame) 和旧版 pjax 容器
+    const targetNode =
+      document.getElementById("repo-content-pjax-container") ||
+      document.querySelector("turbo-frame#repo-content-turbo-frame") ||
+      document.body;
+
+    assetsObserver = new MutationObserver((mutations) => {
       let needsUpdate = false;
 
       for (const mutation of mutations) {
@@ -3144,7 +3154,7 @@
       }
     });
 
-    observer.observe(targetNode, {
+    assetsObserver.observe(targetNode, {
       childList: true,
       subtree: true,
     });
@@ -3217,6 +3227,30 @@
     }
   }
   createFloatingButton();
+
+  // === Turbo/SPA 导航事件监听 ===
+  // GitHub 使用 Turbo (Hotwired) 进行 SPA 导航，导航后页面内容被替换但脚本不会重新执行。
+  // 此处监听 Turbo/pjax 导航事件，在导航完成后重新处理 assets 并重建观察器。
+  let spaNavTimer = null;
+  function handleSpaNavigation() {
+    // 防抖：快速连续导航时只执行最后一次
+    if (spaNavTimer) clearTimeout(spaNavTimer);
+    spaNavTimer = setTimeout(() => {
+      processAssets();
+      setupAssetsObserver();
+      // 导航可能移除了悬浮按钮，重新创建
+      if (!document.getElementById("mgga-float-btn")) {
+        createFloatingButton();
+      }
+    }, 200);
+  }
+
+  // Turbo 事件 (GitHub 新版 SPA 框架)
+  document.addEventListener("turbo:load", handleSpaNavigation);
+  document.addEventListener("turbo:render", handleSpaNavigation);
+  // pjax 事件 (旧版 SPA 框架，向后兼容)
+  document.addEventListener("pjax:end", handleSpaNavigation);
+  document.addEventListener("pjax:complete", handleSpaNavigation);
 
   // === END SVG Replace Functionality ===
 })();
