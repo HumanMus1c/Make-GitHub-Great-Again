@@ -2,7 +2,7 @@
 // @name                    Make-GitHub-Great-Again
 // @name:en                 Make-GitHub-Great-Again
 // @namespace               https://github.com
-// @version                 5.3.0
+// @version                 2026.8.16
 // @description             为 Release 的项目添加背景色，识别文件系统平台类型，以及高亮自定义关键词
 // @description:en          Add background colors to each Release Asset, identify the file system platform type and custom keywords highlighter.
 // @author                  https://github.com/HumanMus1c
@@ -1248,7 +1248,7 @@
         currentColor = newColor;
         if (hexInput) hexInput.value = newColor;
         if (preview) preview.style.backgroundColor = newColor;
-        
+
         // 关键修复：直接修改 colorBtn 的 style 属性
         if (colorBtn) {
           colorBtn.style.backgroundColor = newColor;
@@ -1385,7 +1385,7 @@
                     <div class="builtin-color-picker-container">
                         <!-- 颜色预览区域 -->
                         <div class="color-picker-preview" id="builtin-color-preview" style="background-color: ${defaultColor}"></div>
-                        
+
                         <!-- 主色彩区域和色调条 -->
                         <div class="builtin-picker-top-section">
                             <!-- 主色彩区 (左) -->
@@ -1443,13 +1443,13 @@
         );
         const hueStrip = librariesContainer.querySelector("#hue-strip");
         const huePicker = librariesContainer.querySelector("#hue-picker");
-        
+
         // 赋值给外部作用域变量
         hexInput = librariesContainer.querySelector(
           ".builtin-hex-single-input",
         );
         preview = librariesContainer.querySelector("#builtin-color-preview");
-        
+
         const multiInputContainer = librariesContainer.querySelector(
           ".builtin-multi-input-container",
         );
@@ -1988,9 +1988,9 @@
     // 颜色按钮点击事件
     const handleColorBtnClick = (e, btn, name) => {
       e.stopPropagation();
-      const currentColor = btn.style.backgroundColor || 
-                          (name === "奇数行" ? customColors.oddRowColor : 
-                           name === "偶数行" ? customColors.evenRowColor : 
+      const currentColor = btn.style.backgroundColor ||
+                          (name === "奇数行" ? customColors.oddRowColor :
+                           name === "偶数行" ? customColors.evenRowColor :
                            customColors.hoverColor);
       toggleColorPickerPanel(btn, name, currentColor);
     };
@@ -2682,6 +2682,19 @@
                 <path fill="#6e7781" d="M4.75 5a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5zM4 7.75A.75.75 0 0 1 4.75 7h2a.75.75 0 0 1 0 1.5h-2A.75.75 0 0 1 4 7.75zm3 2.25a.75.75 0 0 0 0 1.5h3.5a.75.75 0 0 0 0-1.5H7z"></path>
             </svg>`,
     },
+    {
+      name: "iOS",
+      keywords: [
+        "ios",
+        "iphone",
+        "ipad",
+        "ipod",
+        ".ipa",
+      ],
+      svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" data-custom-icon="true">
+                <path fill="#a6a6a6" d="M18.71,19.5C17.88,20.74,17,21.95,15.66,21.97C14.32,22,13.89,21.18,12.37,21.18C10.84,21.18,10.37,21.95,9.1,22C7.79,22.05,6.8,20.68,5.96,19.47C4.25,17,2.94,12.45,4.7,9.15C5.52,7.68,6.83,6.73,8.27,6.73C9.68,6.73,10.56,7.55,12.35,7.55C14.1,7.55,14.78,6.73,16.29,6.73C17.78,6.73,18.92,7.68,19.74,9.15C19.43,9.32,18.29,10.05,18.29,11.5C18.29,13.25,19.78,13.83,19.82,13.85C19.82,13.9,19.18,16.05,18.71,19.5M15.27,5.55C15.9,4.8,16.38,3.7,16.18,2.6C15.24,2.65,14.1,3.25,13.42,4.05C12.82,4.75,12.25,5.85,12.47,6.95C13.5,7,14.62,6.3,15.27,5.55Z"></path>
+            </svg>`,
+    },
   ];
 
   // 压缩包文件扩展名列表
@@ -2719,6 +2732,9 @@
     "netbsd",
     "android",
     "ios",
+    "iphone",
+    "ipad",
+    "ipod",
     "darwin",
     "mobile",
     "desktop",
@@ -2750,6 +2766,257 @@
     "386",
     "arm",
   ].sort((a, b) => b.length - a.length); // 按长度降序排序
+
+  // ===== 文件名架构识别算法 (v2) =====
+  // OS 别名归一表：别名 → 规范名
+  const osAliasTable = {
+    windows: "windows", win: "windows", win32: "windows", win64: "windows", nt: "windows",
+    macos: "macos", mac: "macos", osx: "macos", darwin: "macos", apple: "macos",
+    linux: "linux", gnu: "linux", glibc: "linux", musl: "linux",
+    ubuntu: "linux", debian: "linux", fedora: "linux", arch: "linux",
+    centos: "linux", redhat: "linux", rhel: "linux", opensuse: "linux", suse: "linux",
+    alpine: "linux", gentoo: "linux", manjaro: "linux",
+    android: "android",
+    ios: "ios", iphone: "ios", iphoneos: "ios", ipad: "ios", ipod: "ios",
+    freebsd: "freebsd", fbsd: "freebsd",
+    openbsd: "openbsd", obsd: "openbsd",
+    netbsd: "netbsd", nbsd: "netbsd",
+    dragonfly: "dragonfly", dfbsd: "dragonfly",
+    solaris: "solaris", sunos: "solaris",
+    aix: "aix",
+    haiku: "haiku",
+  };
+
+  // 架构别名归一表：别名 → 规范名
+  const archAliasTable = {
+    x86_64: "x86_64", x64: "x86_64", amd64: "x86_64", "x86-64": "x86_64",
+    aarch64: "aarch64", arm64: "aarch64", armv8: "aarch64", "arm64-v8a": "aarch64",
+    armv7: "armv7", armv7hf: "armv7", armhf: "armv7", armv7l: "armv7", "armeabi-v7a": "armv7",
+    armv6: "armv6", armv6hf: "armv6", armv6l: "armv6",
+    armel: "armel", armv5: "armel",
+    i386: "i386", x86: "i386", ia32: "i386", "386": "i386", "486": "i386", "586": "i386",
+    i686: "i686",
+    mips: "mips", mipseb: "mips",
+    mipsle: "mipsle", mipsel: "mipsle",
+    mips64: "mips64", mips64eb: "mips64",
+    mips64le: "mips64le", mips64el: "mips64le",
+    ppc64: "ppc64", powerpc64: "ppc64",
+    ppc64le: "ppc64le", powerpc64le: "ppc64le",
+    riscv64: "riscv64", rv64: "riscv64",
+    riscv32: "riscv32", rv32: "riscv32",
+    s390x: "s390x",
+    loong64: "loong64", loongarch64: "loong64",
+    universal: "universal", fat: "universal", all: "universal", any: "universal", noarch: "universal",
+    arm: "arm",
+  };
+
+  // 格式检测表（复合扩展名优先）
+  const formatTable = [
+    { ext: ".tar.gz", format: "tar.gz" }, { ext: ".tar.bz2", format: "tar.bz2" },
+    { ext: ".tar.xz", format: "tar.xz" }, { ext: ".tar.zst", format: "tar.zst" },
+    { ext: ".tar", format: "tar" }, { ext: ".tgz", format: "tar.gz" },
+    { ext: ".tbz2", format: "tar.bz2" }, { ext: ".txz", format: "tar.xz" },
+    { ext: ".zip", format: "zip" }, { ext: ".rar", format: "rar" },
+    { ext: ".7z", format: "7z" }, { ext: ".gz", format: "gz" },
+    { ext: ".bz2", format: "bz2" }, { ext: ".xz", format: "xz" },
+    { ext: ".exe", format: "exe" }, { ext: ".msi", format: "msi" },
+    { ext: ".dmg", format: "dmg" }, { ext: ".pkg", format: "pkg" },
+    { ext: ".deb", format: "deb" }, { ext: ".rpm", format: "rpm" },
+    { ext: ".apk", format: "apk" }, { ext: ".appimage", format: "AppImage" },
+    { ext: ".snap", format: "snap" }, { ext: ".flatpak", format: "flatpak" },
+    { ext: ".iso", format: "iso" }, { ext: ".img", format: "img" },
+    { ext: ".bin", format: "bin" }, { ext: ".jar", format: "jar" },
+    { ext: ".war", format: "war" }, { ext: ".whl", format: "whl" },
+    { ext: ".egg", format: "egg" }, { ext: ".crate", format: "crate" },
+    { ext: ".gem", format: "gem" }, { ext: ".asar", format: "asar" },
+    { ext: ".ipa", format: "ipa" }, { ext: ".aab", format: "aab" },
+  ];
+
+  /**
+   * 文件名架构识别算法 (v2)
+   * 输入: filename 字符串 (如 "tool-v1.0.0-windows-x64.zip")
+   * 输出: { os, arch, format, confidence, osAlias, archAlias, raw }
+   */
+  function parseFileNameArchitecture(filename) {
+    if (!filename || typeof filename !== "string") {
+      return { os: null, arch: null, format: null, confidence: 0, osAlias: null, archAlias: null, raw: filename || "" };
+    }
+
+    const lower = filename.toLowerCase().trim();
+    const result = {
+      os: null, arch: null, format: null,
+      confidence: 0, osAlias: null, archAlias: null,
+      raw: filename,
+    };
+
+    // --- Phase 1: 格式检测 (从末尾匹配，复合扩展名优先) ---
+    for (const { ext, format } of formatTable) {
+      if (lower.endsWith(ext)) {
+        result.format = format;
+        break;
+      }
+    }
+    if (!result.format) {
+      const m = lower.match(/\.([a-z0-9]+)$/i);
+      if (m) result.format = m[1];
+    }
+
+    // --- Phase 2: 分词 (按分隔符拆分，保留位置信息) ---
+    const delimiterRegex = /[-.+\s]/g; // 不拆下划线，保留 x86_64 等复合关键词
+    const tokens = [];
+    let lastIdx = 0;
+    let m;
+    while ((m = delimiterRegex.exec(lower)) !== null) {
+      if (m.index > lastIdx) {
+        tokens.push({ text: lower.substring(lastIdx, m.index), start: lastIdx, end: m.index });
+      }
+      lastIdx = m.index + m[0].length;
+    }
+    if (lastIdx < lower.length) {
+      tokens.push({ text: lower.substring(lastIdx), start: lastIdx, end: lower.length });
+    }
+
+    // --- Phase 3: OS 检测 (精确 token → 子串边界) ---
+    const osMatches = [];
+    for (const token of tokens) {
+      const t = token.text;
+      if (Object.prototype.hasOwnProperty.call(osAliasTable, t)) {
+        osMatches.push({ canonical: osAliasTable[t], alias: t, quality: 1.0, token });
+        continue;
+      }
+      // 下划线二次拆分（n-gram 最长优先，如 x86_64 优先于 x86）
+      const subTokens = t.split("_");
+      if (subTokens.length > 1) {
+        const matched = new Array(subTokens.length).fill(false);
+        let subFound = false;
+        for (let n = subTokens.length; n >= 1; n--) {
+          for (let i = 0; i + n <= subTokens.length; i++) {
+            if (matched.slice(i, i + n).some((v) => v)) continue;
+            const joined = subTokens.slice(i, i + n).join("_");
+            if (Object.prototype.hasOwnProperty.call(osAliasTable, joined)) {
+              osMatches.push({ canonical: osAliasTable[joined], alias: joined, quality: 1.0, token });
+              for (let k = i; k < i + n; k++) matched[k] = true;
+              subFound = true;
+            }
+          }
+        }
+        if (subFound) continue;
+      }
+      for (const [alias, canonical] of Object.entries(osAliasTable)) {
+        if (alias.length >= 3 && t.includes(alias)) {
+          const idx = t.indexOf(alias);
+          const before = idx > 0 ? t[idx - 1] : "";
+          const after = idx + alias.length < t.length ? t[idx + alias.length] : "";
+          // OS 常跟版本号(如 macos11, win10)，after 放宽：仅禁止字母
+          if (!/[a-z0-9]/.test(before) && !/[a-z]/.test(after)) {
+            osMatches.push({ canonical, alias, quality: 0.6, token });
+          }
+        }
+      }
+    }
+
+    // --- Phase 4: 架构检测 (精确 token → 子串边界) ---
+    const archMatches = [];
+    for (const token of tokens) {
+      const t = token.text;
+      if (Object.prototype.hasOwnProperty.call(archAliasTable, t)) {
+        archMatches.push({ canonical: archAliasTable[t], alias: t, quality: 1.0, token });
+        continue;
+      }
+      // 下划线二次拆分（n-gram 最长优先，如 x86_64 优先于 x86）
+      const subTokens = t.split("_");
+      if (subTokens.length > 1) {
+        const matched = new Array(subTokens.length).fill(false);
+        let subFound = false;
+        for (let n = subTokens.length; n >= 1; n--) {
+          for (let i = 0; i + n <= subTokens.length; i++) {
+            if (matched.slice(i, i + n).some((v) => v)) continue;
+            const joined = subTokens.slice(i, i + n).join("_");
+            if (Object.prototype.hasOwnProperty.call(archAliasTable, joined)) {
+              archMatches.push({ canonical: archAliasTable[joined], alias: joined, quality: 1.0, token });
+              for (let k = i; k < i + n; k++) matched[k] = true;
+              subFound = true;
+            }
+          }
+        }
+        if (subFound) continue;
+      }
+      for (const [alias, canonical] of Object.entries(archAliasTable)) {
+        if (alias.length >= 2 && t.includes(alias)) {
+          const idx = t.indexOf(alias);
+          const before = idx > 0 ? t[idx - 1] : "";
+          const after = idx + alias.length < t.length ? t[idx + alias.length] : "";
+          if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) {
+            archMatches.push({ canonical, alias, quality: 0.6, token });
+          }
+        }
+      }
+    }
+
+    // --- Phase 5: 冲突消解 & 置信度计算 ---
+    if (osMatches.length > 0) {
+      const osGroups = {};
+      for (const match of osMatches) {
+        if (!osGroups[match.canonical]) osGroups[match.canonical] = [];
+        osGroups[match.canonical].push(match);
+      }
+      let bestOS = null, bestScore = 0;
+      // OS 优先级：ios 优先于 macos（更具体的平台名）
+      const osPriority = { ios: 0.01, android: 0.01 };
+      for (const [canonical, matches] of Object.entries(osGroups)) {
+        const maxQuality = Math.max(...matches.map((m2) => m2.quality));
+        const groupBonus = matches.length > 1 ? 0.15 : 0;
+        const priorityBonus = osPriority[canonical] || 0;
+        const score = maxQuality + groupBonus + priorityBonus;
+        if (score > bestScore) {
+          bestScore = score;
+          bestOS = canonical;
+          result.osAlias = matches[0].alias;
+        }
+      }
+      result.os = bestOS;
+      result.confidence += Math.min(bestScore, 1.0) * 0.5;
+    }
+
+    if (archMatches.length > 0) {
+      const archGroups = {};
+      for (const match of archMatches) {
+        if (!archGroups[match.canonical]) archGroups[match.canonical] = [];
+        archGroups[match.canonical].push(match);
+      }
+      let bestArch = null, bestScore = 0;
+      for (const [canonical, matches] of Object.entries(archGroups)) {
+        const maxQuality = Math.max(...matches.map((m2) => m2.quality));
+        const groupBonus = matches.length > 1 ? 0.15 : 0;
+        const score = maxQuality + groupBonus;
+        if (score > bestScore) {
+          bestScore = score;
+          bestArch = canonical;
+          result.archAlias = matches[0].alias;
+        }
+      }
+      result.arch = bestArch;
+      result.confidence += Math.min(bestScore, 1.0) * 0.5;
+    }
+
+    if (result.format) {
+      result.confidence = Math.min(result.confidence + 0.1, 1.0);
+    }
+    // --- Phase 6: 格式反推 OS (.ipa → iOS) ---
+    if (!result.os && result.format === "ipa") {
+      result.os = "ios";
+      result.osAlias = "ipa";
+      result.confidence = Math.max(result.confidence, 0.6);
+    }
+
+    if (!result.os && !result.arch && !result.format) {
+      result.confidence = 0;
+    } else if (!result.os && !result.arch) {
+      result.confidence = Math.min(result.confidence, 0.2);
+    }
+
+    return result;
+  }
 
   // HEX转RGB辅助函数
   function hexToRgb(hex) {
@@ -2804,7 +3071,7 @@
             .file-name-container {
                 display: inline-block; margin-left: 4px;
             }
-        `;
+            `;
 
     // 处理默认架构关键词颜色
     const goldenRatioConjugate = 0.618033988749895;
@@ -3113,6 +3380,7 @@
           fileNameContainer.innerHTML = highlightArchKeywords(originalFileName);
           link.innerHTML = "";
           link.appendChild(fileNameContainer);
+
           item.dataset.highlightProcessed = "true";
         }
       } else {
