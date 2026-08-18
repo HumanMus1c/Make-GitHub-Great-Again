@@ -2,11 +2,11 @@
 // @name                    Make-GitHub-Great-Again
 // @name:en                 Make-GitHub-Great-Again
 // @namespace               https://github.com
-// @version                 2026.8.16
+// @version                 2026.8.18
 // @description             为 Release 的项目添加背景色，识别文件系统平台类型，以及高亮自定义关键词
 // @description:en          Add background colors to each Release Asset, identify the file system platform type and custom keywords highlighter.
 // @author                  https://github.com/HumanMus1c
-// @match                   https://github.com/*/releases*
+// @match                   https://github.com/*/*
 // @grant                   GM_addStyle
 // @grant                   GM_registerMenuCommand
 // @grant                   GM_getValue
@@ -101,6 +101,11 @@
       : defaultColorsLight;
   }
 
+  // 检查是否为 Release 页面
+  function isReleasesPage() {
+    return /\/[^/]+\/[^/]+\/releases(\/.*)?$/i.test(window.location.pathname);
+  }
+
   // 创建样式元素并添加到文档头部
   const styleElement = document.createElement("style");
   styleElement.id = "Make-GitHub-Great-Again-style";
@@ -108,6 +113,11 @@
 
   // 应用颜色的函数 - 根据当前主题动态更新样式
   function applyColors(overrides = null) {
+    if (!isReleasesPage()) {
+      styleElement.textContent = "";
+      return;
+    }
+
     const theme = getCurrentTheme();
     const themeKey = `customColors${theme.charAt(0).toUpperCase() + theme.slice(1)}`;
     const customColors = GM_getValue(themeKey, null);
@@ -183,7 +193,9 @@
           mutation.attributeName === "data-color-mode" ||
           mutation.attributeName === "class"
         ) {
-          applyColors();
+          if (isReleasesPage()) {
+            applyColors();
+          }
           break;
         }
       }
@@ -191,7 +203,11 @@
 
     // 监听系统主题变化
     const systemThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
-    systemThemeMedia.addEventListener("change", applyColors);
+    systemThemeMedia.addEventListener("change", () => {
+      if (isReleasesPage()) {
+        applyColors();
+      }
+    });
 
     // 开始观察文档元素
     observer.observe(document.documentElement, {
@@ -3401,11 +3417,7 @@
       assetsObserver = null;
     }
 
-    // 兼容 Turbo (turbo-frame) 和旧版 pjax 容器
-    const targetNode =
-      document.getElementById("repo-content-pjax-container") ||
-      document.querySelector("turbo-frame#repo-content-turbo-frame") ||
-      document.body;
+    if (!isReleasesPage()) return;
 
     assetsObserver = new MutationObserver((mutations) => {
       let needsUpdate = false;
@@ -3422,18 +3434,15 @@
       }
     });
 
-    assetsObserver.observe(targetNode, {
+    assetsObserver.observe(document.body, {
       childList: true,
       subtree: true,
     });
   }
 
-  // 初始化替换
-  processAssets();
-  setupAssetsObserver();
-
   // 初始化悬浮齿轮按钮
   function createFloatingButton() {
+    if (!isReleasesPage()) return;
     if (document.getElementById("mgga-float-btn")) return;
 
     const btn = document.createElement("div");
@@ -3494,23 +3503,55 @@
       btn.classList.add("hidden-to-right");
     }
   }
-  createFloatingButton();
 
-  // === Turbo/SPA 导航事件监听 ===
-  // GitHub 使用 Turbo (Hotwired) 进行 SPA 导航，导航后页面内容被替换但脚本不会重新执行。
-  // 此处监听 Turbo/pjax 导航事件，在导航完成后重新处理 assets 并重建观察器。
+  // 移除悬浮按钮
+  function removeFloatingButton() {
+    const btn = document.getElementById("mgga-float-btn");
+    if (btn) btn.remove();
+  }
+
+  // 监听 GitHub 原生 include-fragment 异步懒加载事件
+  document.addEventListener("include-fragment-replace", () => {
+    if (isReleasesPage()) {
+      setTimeout(processAssets, 10);
+    }
+  });
+  document.addEventListener("include-fragment-replaced", () => {
+    if (isReleasesPage()) {
+      setTimeout(processAssets, 10);
+    }
+  });
+
+  // === Turbo/SPA 导航与初始化 ===
   let spaNavTimer = null;
   function handleSpaNavigation() {
-    // 防抖：快速连续导航时只执行最后一次
     if (spaNavTimer) clearTimeout(spaNavTimer);
     spaNavTimer = setTimeout(() => {
-      processAssets();
-      setupAssetsObserver();
-      // 导航可能移除了悬浮按钮，重新创建
-      if (!document.getElementById("mgga-float-btn")) {
-        createFloatingButton();
+      if (isReleasesPage()) {
+        applyColors();
+        processAssets();
+        setupAssetsObserver();
+        if (!document.getElementById("mgga-float-btn")) {
+          createFloatingButton();
+        }
+      } else {
+        if (assetsObserver) {
+          assetsObserver.disconnect();
+          assetsObserver = null;
+        }
+        applyColors();
+        removeFloatingButton();
+        const dialog = document.querySelector(".color-picker-dialog");
+        if (dialog) dialog.remove();
       }
-    }, 200);
+    }, 100);
+  }
+
+  // 初始执行
+  if (isReleasesPage()) {
+    processAssets();
+    setupAssetsObserver();
+    createFloatingButton();
   }
 
   // Turbo 事件 (GitHub 新版 SPA 框架)
@@ -3519,6 +3560,8 @@
   // pjax 事件 (旧版 SPA 框架，向后兼容)
   document.addEventListener("pjax:end", handleSpaNavigation);
   document.addEventListener("pjax:complete", handleSpaNavigation);
+  // 原生历史变化事件
+  window.addEventListener("popstate", handleSpaNavigation);
 
   // === END SVG Replace Functionality ===
 })();
