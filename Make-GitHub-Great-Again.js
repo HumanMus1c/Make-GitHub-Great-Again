@@ -2,7 +2,7 @@
 // @name                    Make-GitHub-Great-Again
 // @name:en                 Make-GitHub-Great-Again
 // @namespace               https://github.com
-// @version                 2026.8.18
+// @version                 2026.9.3
 // @description             为 Release 的项目添加背景色，识别文件系统平台类型，以及高亮自定义关键词
 // @description:en          Add background colors to each Release Asset, identify the file system platform type and custom keywords highlighter.
 // @author                  https://github.com/HumanMus1c
@@ -2151,10 +2151,14 @@
           .forEach((item) => {
             if (item.dataset.highlightProcessed === "true") {
               const link = item.querySelector(
-                "div.d-flex.flex-justify-start.col-12.col-lg-6 > a",
+                "div.d-flex.flex-justify-start.col-12.col-lg-6 a",
               );
               if (link && item._originalFileName) {
-                link.innerHTML = item._originalFileName;
+                // 恢复时重建 GitHub 原生结构（span.text-bold 包裹），保持加粗样式
+                const restoreSpan = document.createElement("span");
+                restoreSpan.className = "text-bold";
+                restoreSpan.textContent = item._originalFileName;
+                link.replaceChildren(restoreSpan);
               }
               item.dataset.highlightProcessed = "false";
             }
@@ -3266,7 +3270,7 @@
 
     assetItems.forEach((item) => {
       const link = item.querySelector(
-        "div.d-flex.flex-justify-start.col-12.col-lg-6 > a",
+        "div.d-flex.flex-justify-start.col-12.col-lg-6 a",
       );
       if (!link) return;
 
@@ -3372,8 +3376,9 @@
             newSvg.classList.add("custom-svg-icon");
 
             const activeSvg = svgContainer.querySelector("svg");
-            if (activeSvg) {
-              svgContainer.replaceChild(newSvg, activeSvg);
+            if (activeSvg && activeSvg.parentNode) {
+              // GitHub 新 DOM 中 svg 的父节点可能是内部 span，使用父节点替换以兼容新旧结构
+              activeSvg.parentNode.replaceChild(newSvg, activeSvg);
             }
           }
           item.dataset.svgProcessed = "true";
@@ -3381,8 +3386,9 @@
       } else {
         if (item.dataset.svgProcessed === "true") {
           const customSvg = svgContainer.querySelector("svg.custom-svg-icon");
-          if (customSvg && item._originalSvg) {
-            svgContainer.replaceChild(item._originalSvg, customSvg);
+          if (customSvg && customSvg.parentNode) {
+            // 使用父节点替换，兼容 GitHub 新旧 DOM 结构
+            customSvg.parentNode.replaceChild(item._originalSvg, customSvg);
           }
           item.dataset.svgProcessed = "false";
         }
@@ -3392,7 +3398,8 @@
       if (isHighlightEnabled) {
         if (item.dataset.highlightProcessed !== "true") {
           const fileNameContainer = document.createElement("span");
-          fileNameContainer.className = "file-name-container";
+          // 加入 text-bold 保持 GitHub 新版原生加粗样式
+          fileNameContainer.className = "file-name-container text-bold";
           fileNameContainer.innerHTML = highlightArchKeywords(originalFileName);
           link.innerHTML = "";
           link.appendChild(fileNameContainer);
@@ -3401,7 +3408,11 @@
         }
       } else {
         if (item.dataset.highlightProcessed === "true") {
-          link.innerHTML = originalFileName;
+          // 重建 span.text-bold 保持 GitHub 新版原生加粗样式
+          const restoreSpan = document.createElement("span");
+          restoreSpan.className = "text-bold";
+          restoreSpan.textContent = originalFileName;
+          link.replaceChildren(restoreSpan);
           item.dataset.highlightProcessed = "false";
         }
       }
