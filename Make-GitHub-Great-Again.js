@@ -2,7 +2,7 @@
 // @name                    Make-GitHub-Great-Again
 // @name:en                 Make-GitHub-Great-Again
 // @namespace               https://github.com
-// @version                 2026.9.3
+// @version                 2026.9.17
 // @description             为 Release 的项目添加背景色，识别文件系统平台类型，以及高亮自定义关键词
 // @description:en          Add background colors to each Release Asset, identify the file system platform type and custom keywords highlighter.
 // @author                  https://github.com/HumanMus1c
@@ -148,6 +148,187 @@
     }
   }
 
+  // === 视口自适应：保证面板永不超出屏幕 ===
+  function getViewportMetrics() {
+    const vv = window.visualViewport;
+    if (vv) {
+      return {
+        width: vv.width,
+        height: vv.height,
+        offsetLeft: vv.offsetLeft,
+        offsetTop: vv.offsetTop,
+      };
+    }
+    return {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      offsetLeft: 0,
+      offsetTop: 0,
+    };
+  }
+
+  /**
+   * 将 fixed 元素完整放入视口内：限制最大宽高，并钳制 left/top。
+   * options:
+   *   margin        - 边距 (默认 8)
+   *   centerY       - 是否垂直居中 (对话框 true, 子面板 false)
+   *   preferLeft    - 优先使用的 left
+   *   anchorRect    - 锚点矩形；提供时在锚点右侧弹出，放不下则翻到左侧
+   *   scrollable    - 超出时是否允许自身滚动 (子面板 true；对话框 false，由内部 content 滚动)
+   */
+  function placeFixedInViewport(el, options = {}) {
+    if (!el || !el.isConnected) return;
+
+    const margin = options.margin != null ? options.margin : 8;
+    const centerY = options.centerY !== false;
+    const preferLeft = options.preferLeft != null ? options.preferLeft : margin;
+    const anchorRect = options.anchorRect || null;
+    const scrollable = options.scrollable !== false;
+
+    const vp = getViewportMetrics();
+    const maxW = Math.max(120, vp.width - margin * 2);
+    const maxH = Math.max(80, vp.height - margin * 2);
+
+    // 测量时临时去掉 transform / transition，避免滑入动画或居中偏移干扰
+    const prevTransform = el.style.transform;
+    const prevTransition = el.style.transition;
+    el.style.transition = "none";
+    el.style.transform = "none";
+    el.style.maxWidth = maxW + "px";
+    el.style.maxHeight = maxH + "px";
+    el.style.boxSizing = "border-box";
+    if (scrollable) {
+      el.style.overflowX = "hidden";
+      el.style.overflowY = "auto";
+    }
+
+    let rect = el.getBoundingClientRect();
+    let left;
+    let top;
+
+    if (anchorRect) {
+      // 相对锚点定位：优先右侧，放不下则左侧
+      left = anchorRect.right + margin;
+      top = anchorRect.top;
+      if (left + rect.width > vp.offsetLeft + vp.width - margin) {
+        left = anchorRect.left - rect.width - margin;
+      }
+      if (left < vp.offsetLeft + margin) {
+        left = vp.offsetLeft + margin;
+      }
+      if (left + rect.width > vp.offsetLeft + vp.width - margin) {
+        left = Math.max(vp.offsetLeft + margin, vp.offsetLeft + vp.width - rect.width - margin);
+      }
+      if (top + rect.height > vp.offsetTop + vp.height - margin) {
+        top = vp.offsetTop + vp.height - rect.height - margin;
+      }
+      if (top < vp.offsetTop + margin) {
+        top = vp.offsetTop + margin;
+      }
+    } else if (centerY) {
+      // 垂直居中；若高度接近/超过视口则贴顶
+      if (rect.height >= vp.height - margin * 2) {
+        top = vp.offsetTop + margin / 2;
+      } else {
+        top = vp.offsetTop + (vp.height - rect.height) / 2;
+      }
+      left = preferLeft;
+      if (rect.width >= maxW) {
+        left = vp.offsetLeft + margin;
+      } else {
+        left = Math.max(
+          vp.offsetLeft + margin,
+          Math.min(left, vp.offsetLeft + vp.width - rect.width - margin),
+        );
+      }
+      if (left + rect.width > vp.offsetLeft + vp.width - margin) {
+        left = Math.max(vp.offsetLeft + margin, vp.offsetLeft + vp.width - rect.width - margin);
+      }
+    } else {
+      top = vp.offsetTop + margin / 2;
+      left = preferLeft;
+      if (left + rect.width > vp.offsetLeft + vp.width - margin) {
+        left = Math.max(vp.offsetLeft + margin, vp.offsetLeft + vp.width - rect.width - margin);
+      }
+      if (left < vp.offsetLeft + margin) left = vp.offsetLeft + margin;
+    }
+
+    el.style.left = Math.round(left) + "px";
+    el.style.top = Math.round(top) + "px";
+
+    // 还原 transform（交给 CSS 类控制滑入动画），并恢复 transition
+    el.style.transform = prevTransform || "";
+    el.style.transition = prevTransition;
+    void el.offsetHeight;
+  }
+
+  function attachViewportAdaptation(el, onReflow) {
+    if (!el || el._viewportHandler) return;
+    let rafId = 0;
+    const handler = () => {
+      if (!document.body.contains(el)) {
+        detachViewportAdaptation(el);
+        return;
+      }
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        if (!document.body.contains(el)) return;
+        if (typeof onReflow === "function") onReflow();
+      });
+    };
+    window.addEventListener("resize", handler);
+    window.addEventListener("orientationchange", handler);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", handler);
+      window.visualViewport.addEventListener("scroll", handler);
+    }
+    el._viewportHandler = handler;
+  }
+
+  function detachViewportAdaptation(el) {
+    if (!el || !el._viewportHandler) return;
+    const handler = el._viewportHandler;
+    window.removeEventListener("resize", handler);
+    window.removeEventListener("orientationchange", handler);
+    if (window.visualViewport) {
+      window.visualViewport.removeEventListener("resize", handler);
+      window.visualViewport.removeEventListener("scroll", handler);
+    }
+    delete el._viewportHandler;
+  }
+
+  function clampElementInViewport(el, margin) {
+    if (!el || !el.isConnected) return;
+    // 对话框由 CSS 居中 + max-height 保证不越界，不要改写其 transform/top
+    if (el.classList.contains("color-picker-dialog")) {
+      syncDialogViewportLimit(el);
+      return;
+    }
+    placeFixedInViewport(el, {
+      margin: margin != null ? margin : 8,
+      centerY: false,
+      scrollable: true,
+      preferLeft: 8,
+    });
+  }
+
+  /**
+   * 仅用布局视口同步对话框 max-height，不碰 transform/left/top，
+   * 以保留滑入动画与 CSS 垂直居中（高度增长时自动回中，不会顶出屏幕底边）。
+   */
+  function syncDialogViewportLimit(dialog) {
+    if (!dialog || !dialog.isConnected) return;
+    const margin = 16;
+    // fixed 元素相对布局视口定位，优先用 innerHeight（兼容性最好）
+    const layoutH = window.innerHeight || getViewportMetrics().height;
+    const layoutW = window.innerWidth || getViewportMetrics().width;
+    const maxH = Math.max(120, layoutH - margin);
+    const maxW = Math.max(160, layoutW - margin);
+    dialog.style.maxHeight = maxH + "px";
+    dialog.style.maxWidth = maxW + "px";
+  }
+
   // 更新对话框中的颜色显示
   function updateDialogColors() {
     const dialog = document.querySelector(".color-picker-dialog");
@@ -229,16 +410,26 @@
         /* 对话框样式 - 修复主题跟随问题 */
         .color-picker-dialog {
             position: fixed;
-            top: 50%; /* 垂直居中 */
+            top: 50%; /* 垂直居中；高度变化时自动保持在视口内 */
             left: 1em; /* 距离左侧缩进跟随缩放 */
             transform: translateY(-50%) translateX(-100%);
             border-radius: 0.5em;
             padding: 1.25em;
             box-shadow: 0 0.15em 1.5em rgba(0,0,0,0.2);
             z-index: 10000;
-            min-width: 0 !important; max-width: min(20em, 90vw);
+            min-width: 0 !important;
+            width: min(20em, calc(100vw - 2em));
+            max-width: calc(100vw - 2em);
+            /* 视口限高：内容再高也不会顶出屏幕，由内部滚动 */
+            max-height: calc(100vh - 1em);
+            max-height: calc(100dvh - 1em);
             font-family: inherit; /* 继承页面字体 */
             font-size: var(--mgga-text-scale); /* 文本字体总体缩放 */
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            overscroll-behavior: contain;
 
             /* 初始状态 - 不可见 */
             opacity: 0;
@@ -331,12 +522,17 @@
             align-items: center;
             margin-bottom: 1em;
             padding-bottom: 0.5em;
+            flex-shrink: 0;
         }
 
         .color-picker-title {
             font-weight: bold;
             margin: 0;
             font-size: 1.25em;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .color-picker-close {
@@ -344,6 +540,7 @@
             padding: 0.3em 0.6em;
             font-size: 1.5em;
             transition: all 0.3s ease;
+            flex-shrink: 0;
         }
 
         .color-picker-close:hover {
@@ -354,6 +551,15 @@
             display: flex;
             flex-direction: column;
             gap: 0.75em;
+            /* min-height:0 允许在 max-height 下收缩并滚动，按钮行保持可见 */
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            overscroll-behavior: contain;
+            /* 负 margin 吃掉对话框 padding，滚动条贴边 */
+            margin: 0 -0.35em;
+            padding: 0 0.35em;
         }
 
         .color-picker-row {
@@ -361,16 +567,22 @@
             align-items: center;
             gap: 0.75em;
             justify-content: space-between;
+            flex-wrap: wrap;
+            min-width: 0;
         }
 
         .menu-command {
             font-size: 1em;
             font-weight: 500;
-            min-width: 8em;
+            min-width: 0;
+            max-width: 100%;
             display: inline-flex;
             align-items: center;
             gap: 0.3em;
             flex-wrap: nowrap;
+            flex: 1 1 auto;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .button-row {
@@ -378,6 +590,9 @@
             justify-content: flex-end;
             gap: 0.75em;
             margin-top: 0.75em;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+            padding-top: 0.35em;
         }
 
         .dialog-button {
@@ -658,11 +873,18 @@
             padding: 0.8em;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             z-index: 10001;
-            min-width: fit-content;
             display: flex;
             flex-direction: column;
             gap: 0.6em;
-            max-width: 90vw;
+            width: max-content;
+            min-width: min(14em, calc(100vw - 1em));
+            max-width: min(90vw, calc(100vw - 1em));
+            max-height: calc(100vh - 1em);
+            max-height: calc(100dvh - 1em);
+            overflow-x: hidden;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            box-sizing: border-box;
         }
 
         .custom-color-picker-panel input[type="text"] {
@@ -725,15 +947,19 @@
             gap: 1em;
             flex-wrap: wrap;
             align-items: flex-start;
+            max-width: 100%;
+            min-width: 0;
         }
 
         .color-picker-library-item {
             flex: 0 1 auto;
-            min-width: fit-content;
+            min-width: min(12em, 100%);
+            max-width: 100%;
             padding: 0.6em;
             border: 1px solid rgba(125, 125, 125, 0.2);
             border-radius: 0.3em;
             background: rgba(125, 125, 125, 0.05);
+            box-sizing: border-box;
         }
 
         .color-picker-library-label {
@@ -752,7 +978,8 @@
             padding: 0.8em;
             background: rgba(125, 125, 125, 0.05);
             border-radius: 0.3em;
-            width: 250px; /* 固定宽度，防止切换模式时抖动 */
+            width: min(250px, 100%); /* 常规固定宽度，窄屏时收缩 */
+            max-width: 100%;
             box-sizing: border-box;
         }
 
@@ -1043,6 +1270,7 @@
     // 关键修复：如果对话框已存在，先移除旧的，确保每次打开都是全新的状态和作用域
     const existingDialog = document.querySelector(".color-picker-dialog");
     if (existingDialog) {
+      detachViewportAdaptation(existingDialog);
       existingDialog.remove();
     }
 
@@ -1089,23 +1317,23 @@
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5em;">
                         <span class="menu-command"><button class="color-toggle-btn" id="highlightToggleBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("highlightTitle")}</span>
                     </div>
-                    <div id="customKeywordsContainer" style="max-height: 16em; overflow-y: auto; margin-bottom: 0.5em;">
+                    <div id="customKeywordsContainer" style="max-height: min(16em, 28vh); overflow-y: auto; margin-bottom: 0.5em;">
                         <!-- 动态渲染关键词列表 -->
                     </div>
-                    <div style="display: flex; gap: 0.5em; align-items: center;">
-                        <input type="text" id="newKeywordInput" placeholder="${i18n.t("newKeywordPlaceholder")}" style="flex: 1; padding: 0.4em; border-radius: 0.3em; border: 1px solid var(--arch-border, #d0d7de); background: transparent; color: inherit; font-size: 1em;">
-                        <button class="color-button" id="newKeywordColorBtn" style="background-color: #ffeb3b; width: 2.2em; height: 2.2em; padding: 0; border: 1px solid rgba(125,125,125,0.3); cursor: pointer; border-radius: 0.3em;"></button>
-                        <button id="addKeywordBtn" title="${i18n.t("add")}" style="background: #2da44e; color: white; border: none; border-radius: 0.3em; padding: 0.4em 0.8em; cursor: pointer; font-weight: bold; font-size: var(--mgga-btn-scale);">${i18n.t("add")}</button>
+                    <div style="display: flex; gap: 0.5em; align-items: center; flex-wrap: wrap;">
+                        <input type="text" id="newKeywordInput" placeholder="${i18n.t("newKeywordPlaceholder")}" style="flex: 1 1 8em; min-width: 0; padding: 0.4em; border-radius: 0.3em; border: 1px solid var(--arch-border, #d0d7de); background: transparent; color: inherit; font-size: 1em;">
+                        <button class="color-button" id="newKeywordColorBtn" style="background-color: #ffeb3b; width: 2.2em; height: 2.2em; padding: 0; border: 1px solid rgba(125,125,125,0.3); cursor: pointer; border-radius: 0.3em; flex-shrink: 0;"></button>
+                        <button id="addKeywordBtn" title="${i18n.t("add")}" style="background: #2da44e; color: white; border: none; border-radius: 0.3em; padding: 0.4em 0.8em; cursor: pointer; font-weight: bold; font-size: var(--mgga-btn-scale); white-space: nowrap; flex-shrink: 0;">${i18n.t("add")}</button>
                     </div>
                 </div>
-
-                <div class="button-row" style="margin-top: 1em;">
-        <button class="dialog-button reset-button" title="${i18n.t("resetTitle")}">${i18n.t("reset")}</button>
-          <div style="margin-left: auto; display: flex; gap: 0.75em;">
-            <button class="dialog-button cancel-button" id="cancelDialogBtn">${i18n.t("cancel")}</button>
-            <button class="dialog-button confirm-button" id="confirmDialogBtn">${i18n.t("confirm")}</button>
-          </div>
-        </div>
+            </div>
+            <div class="button-row" style="margin-top: 1em;">
+                <button class="dialog-button reset-button" title="${i18n.t("resetTitle")}">${i18n.t("reset")}</button>
+                <div style="margin-left: auto; display: flex; gap: 0.75em; flex-wrap: wrap;">
+                    <button class="dialog-button cancel-button" id="cancelDialogBtn">${i18n.t("cancel")}</button>
+                    <button class="dialog-button confirm-button" id="confirmDialogBtn">${i18n.t("confirm")}</button>
+                </div>
+            </div>
         `;
 
     document.body.appendChild(dialog);
@@ -1929,6 +2157,9 @@
         if (p._closeHandler) {
           document.removeEventListener("click", p._closeHandler);
         }
+        if (p._resizeObserver) {
+          p._resizeObserver.disconnect();
+        }
         p.remove();
         // 如果面板有关联的按钮，清除引用
         if (p._associatedBtn) {
@@ -1948,39 +2179,37 @@
           return;
         }
         panel._associatedBtn = colorBtn; // 建立双向引用以便清理
-        const rect = colorBtn.getBoundingClientRect();
 
-        // 智能定位，避免超出屏幕
-        let left = rect.right + 10;
-        let top = rect.top;
-
-        // 监听面板加载完成后调整位置
-        setTimeout(() => {
-          const panelRect = panel.getBoundingClientRect();
-
-          // 如果超出右边界，改为左侧显示
-          if (left + panelRect.width > window.innerWidth - 10) {
-            left = rect.left - panelRect.width - 10;
-          }
-
-          // 如果超出下边界，向上调整
-          if (top + panelRect.height > window.innerHeight - 10) {
-            top = window.innerHeight - panelRect.height - 10;
-          }
-
-          // 确保不超出上边界
-          if (top < 10) {
-            top = 10;
-          }
-
-          panel.style.left = left + "px";
-          panel.style.top = top + "px";
-        }, 50);
-
-        panel.style.left = left + "px";
-        panel.style.top = top + "px";
         document.body.appendChild(panel);
         colorBtn._panel = panel;
+
+        const repositionPanel = () => {
+          if (!document.body.contains(panel)) return;
+          placeFixedInViewport(panel, {
+            margin: 8,
+            centerY: false,
+            scrollable: true,
+            anchorRect: colorBtn.getBoundingClientRect(),
+          });
+        };
+        repositionPanel();
+
+        // 内容异步加载/尺寸变化时重新夹紧，保证始终在屏幕内
+        if (typeof ResizeObserver !== "undefined") {
+          let roRaf = 0;
+          const ro = new ResizeObserver(() => {
+            if (roRaf) cancelAnimationFrame(roRaf);
+            roRaf = requestAnimationFrame(repositionPanel);
+          });
+          ro.observe(panel);
+          panel._resizeObserver = ro;
+        }
+        // 双 rAF + 延迟兜底：等内置取色器等子内容完成布局
+        requestAnimationFrame(() => {
+          requestAnimationFrame(repositionPanel);
+        });
+        setTimeout(repositionPanel, 80);
+        setTimeout(repositionPanel, 250);
 
         // 点击其他地方关闭面板
         const closeHandler = (e) => {
@@ -1991,6 +2220,9 @@
           if (panel.contains(e.target)) return;
 
           // 执行关闭
+          if (panel._resizeObserver) {
+            panel._resizeObserver.disconnect();
+          }
           panel.remove();
           colorBtn._panel = null;
           document.removeEventListener("click", closeHandler);
@@ -2210,6 +2442,9 @@
                 `;
         container.appendChild(item);
       });
+
+      // 关键词区变化后同步一次视口限高（保持 CSS 居中，不改 transform）
+      syncDialogViewportLimit(dialog);
 
       // 颜色编辑：点击色块
       container.querySelectorAll(".keyword-color-swatch").forEach((sw) => {
@@ -2472,10 +2707,30 @@
       document.body.appendChild(dialog);
     }
 
+    // 只同步 max-height/width，绝不动 transform/top/left —— 否则滑入动画会退化成渐隐，
+    // 且按「打开瞬间高度」写死 top 会在关键词等内容加载后顶出屏幕底边。
+    syncDialogViewportLimit(dialog);
+    attachViewportAdaptation(dialog, () => {
+      syncDialogViewportLimit(dialog);
+      // 同步夹紧已打开的颜色子面板
+      document.querySelectorAll(".custom-color-picker-panel").forEach((p) => {
+        if (p._associatedBtn && document.body.contains(p._associatedBtn)) {
+          placeFixedInViewport(p, {
+            margin: 8,
+            centerY: false,
+            scrollable: true,
+            anchorRect: p._associatedBtn.getBoundingClientRect(),
+          });
+        } else {
+          clampElementInViewport(p, 8);
+        }
+      });
+    });
+
     // 触发重绘
     void dialog.offsetHeight;
 
-    // 添加可见类触发动画
+    // 添加可见类触发动画（CSS: translateY(-50%) translateX(-100%) → translateX(0)）
     dialog.classList.add("visible");
 
     // 隐藏悬浮按钮
@@ -2489,11 +2744,15 @@
   function closeDialog(dialog) {
     // 移除可见类触发滑出动画
     dialog.classList.remove("visible");
+    detachViewportAdaptation(dialog);
 
     // 同时关闭所有打开的颜色选择器子面板
     document.querySelectorAll(".custom-color-picker-panel").forEach((p) => {
       if (p._closeHandler) {
         document.removeEventListener("click", p._closeHandler);
+      }
+      if (p._resizeObserver) {
+        p._resizeObserver.disconnect();
       }
       p.remove();
     });
@@ -2502,6 +2761,7 @@
     const floatBtn = document.getElementById("mgga-float-btn");
     if (floatBtn) {
       floatBtn.classList.remove("hidden-to-right");
+      clampFloatButton(floatBtn);
     }
 
     // 清理绑定的全局事件，防止内存泄漏和重复触发
@@ -2515,6 +2775,25 @@
         dialog.parentNode.removeChild(dialog);
       }
     }, 300); // 300ms是动画持续时间
+  }
+
+  function clampFloatButton(btn) {
+    if (!btn || !document.body.contains(btn)) return;
+    const vp = getViewportMetrics();
+    const rect = btn.getBoundingClientRect();
+    if (!rect.height) return;
+    const half = rect.height / 2;
+    let centerY = rect.top + half;
+    const minCenter = vp.offsetTop + half + 4;
+    const maxCenter = vp.offsetTop + vp.height - half - 4;
+    if (maxCenter < minCenter) {
+      centerY = vp.offsetTop + vp.height / 2;
+    } else {
+      centerY = Math.max(minCenter, Math.min(centerY, maxCenter));
+    }
+    // top 语义为按钮中心（配合 transform: translateY(-50%)）
+    btn.style.top = centerY + "px";
+    btn.style.transform = "translateY(-50%)";
   }
 
   // 注册油猴菜单选项
@@ -3471,7 +3750,18 @@
         // 稍微提高拖动判断阈值，防止点击时手抖误判为拖拽
         isDragging = true;
         btn.classList.add("is-dragging");
-        btn.style.top = `${startTop + dy}px`;
+        const vp = getViewportMetrics();
+        const btnH = btn.offsetHeight || 44;
+        const half = btnH / 2;
+        const minCenter = vp.offsetTop + half + 4;
+        const maxCenter = vp.offsetTop + vp.height - half - 4;
+        let nextTop = startTop + dy;
+        if (maxCenter >= minCenter) {
+          nextTop = Math.max(minCenter, Math.min(nextTop, maxCenter));
+        } else {
+          nextTop = vp.offsetTop + vp.height / 2;
+        }
+        btn.style.top = `${nextTop}px`;
       }
     };
 
@@ -3513,6 +3803,26 @@
     if (dialog) {
       btn.classList.add("hidden-to-right");
     }
+
+    // 分辨率 / 缩放 / 窗口尺寸变化时，保证悬浮按钮始终在屏幕内
+    const floatBtnViewportHandler = () => {
+      if (!document.body.contains(btn)) {
+        window.removeEventListener("resize", floatBtnViewportHandler);
+        window.removeEventListener("orientationchange", floatBtnViewportHandler);
+        if (window.visualViewport) {
+          window.visualViewport.removeEventListener("resize", floatBtnViewportHandler);
+        }
+        return;
+      }
+      clampFloatButton(btn);
+    };
+    window.addEventListener("resize", floatBtnViewportHandler);
+    window.addEventListener("orientationchange", floatBtnViewportHandler);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", floatBtnViewportHandler);
+    }
+    // 初始也夹紧一次，防止极端缩放下初始 50% 落在屏幕外
+    clampFloatButton(btn);
   }
 
   // 移除悬浮按钮
@@ -3553,7 +3863,10 @@
         applyColors();
         removeFloatingButton();
         const dialog = document.querySelector(".color-picker-dialog");
-        if (dialog) dialog.remove();
+        if (dialog) {
+          detachViewportAdaptation(dialog);
+          dialog.remove();
+        }
       }
     }, 100);
   }
