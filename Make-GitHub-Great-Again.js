@@ -2,8 +2,8 @@
 // @name                    Make-GitHub-Great-Again
 // @name:en                 Make-GitHub-Great-Again
 // @namespace               https://github.com
-// @version                 2026.9.21
-// @description             为 Release 的项目添加背景色，识别文件系统平台类型，以及高亮自定义关键词；修正移动端仓库页右侧空白列
+// @version                 2026.9.30
+// @description             为 Release 的项目添加背景色，识别文件系统平台类型，以及高亮自定义关键词；修正移动端仓库页右侧空白列，新增移动端左侧悬浮导航
 // @description:en          Add background colors to each Release Asset, identify the file system platform type and custom keywords highlighter. Fix empty right column on mobile.
 // @author                  https://github.com/HumanMus1c
 // @match                   https://github.com/*/*
@@ -60,9 +60,17 @@
         restore: { zh: "恢复", en: "Restore" },
         deleteRule: { zh: "删除", en: "Delete" },
         mobileFix: { zh: "修正仓库头按钮溢出", en: "Fix repo header button overflow" },
-        navMoreFlatten: { zh: "导航栏 More 多行开关", en: "Nav More multi-line toggle" },
-        navMoreExpand: { zh: "展开首行以下导航项", en: "Expand nav rows below first line" },
-        navMoreCollapse: { zh: "收起首行以下导航项", en: "Collapse nav rows below first line" }
+        mobileNavDock: { zh: "移动端左侧悬浮导航", en: "Mobile floating nav dock" },
+        mobileNavDockMenuToggle: {
+          zh: "展开/收起悬浮导航",
+          en: "Expand/Collapse nav dock",
+        },
+        mobileNavDockExpand: { zh: "展开悬浮导航", en: "Expand nav dock" },
+        mobileNavDockCollapse: { zh: "收起悬浮导航", en: "Collapse nav dock" },
+        navDockUnavailable: {
+          zh: "当前页面不是仓库主页，悬浮导航仅在 用户名/仓库 主页可用",
+          en: "This page is not a repository home; the nav dock only works on owner/repo home pages",
+        }
       };
       return texts[key] ? (this.isCN ? texts[key].zh : texts[key].en) : key;
     }
@@ -1370,9 +1378,6 @@
                 <div class="color-picker-row">
                     <span class="menu-command"><button class="color-toggle-btn" id="mobileFixToggleBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("mobileFix")}</span>
                 </div>
-                <div class="color-picker-row">
-                    <span class="menu-command"><button class="color-toggle-btn" id="navMoreFlattenToggleBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("navMoreFlatten")}</span>
-                </div>
                 <div style="margin-top: 0.75em; border-top: 1px solid rgba(125, 125, 125, 0.2); padding-top: 0.75em;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5em;">
                         <span class="menu-command"><button class="color-toggle-btn" id="highlightToggleBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("highlightTitle")}</span>
@@ -1487,26 +1492,6 @@
         GM_setValue("mobileLayoutFix", isMobileFixEnabled);
         updateMobileFixBtnUI(isMobileFixEnabled);
         applyMobileLayoutFix();
-      });
-    }
-
-    // 初始化导航栏 More 展开开关
-    const navMoreFlattenToggleBtn = dialog.querySelector("#navMoreFlattenToggleBtn");
-    if (navMoreFlattenToggleBtn) {
-      let isNavMoreFlattenEnabled = GM_getValue("navMoreFlatten", true);
-      const updateNavMoreFlattenBtnUI = (enabled) => {
-        navMoreFlattenToggleBtn.classList.toggle("disabled", !enabled);
-        navMoreFlattenToggleBtn.innerHTML = enabled ? "✓" : "✕";
-        navMoreFlattenToggleBtn.title = enabled ? i18n.t("enabledTitle") : i18n.t("disabledTitle");
-      };
-      updateNavMoreFlattenBtnUI(isNavMoreFlattenEnabled);
-      navMoreFlattenToggleBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        isNavMoreFlattenEnabled = !isNavMoreFlattenEnabled;
-        GM_setValue("navMoreFlatten", isNavMoreFlattenEnabled);
-        updateNavMoreFlattenBtnUI(isNavMoreFlattenEnabled);
-        applyNavMoreFlatten();
       });
     }
 
@@ -2904,10 +2889,8 @@
     GM_setValue("mobileLayoutFix", next);
     applyMobileLayoutFix();
   });
-  GM_registerMenuCommand(i18n.t("navMoreFlatten"), () => {
-    const next = !GM_getValue("navMoreFlatten", true);
-    GM_setValue("navMoreFlatten", next);
-    applyNavMoreFlatten();
+  GM_registerMenuCommand(i18n.t("mobileNavDockMenuToggle"), () => {
+    toggleNavDockPanelFromMenu();
   });
   GM_registerMenuCommand(i18n.t("menuSettings"), createColorPickerDialog);
 
@@ -4224,134 +4207,278 @@
   }
   window.addEventListener("resize", scheduleHeaderBtnFix);
   window.addEventListener("orientationchange", scheduleHeaderBtnFix);
-  window.addEventListener("resize", scheduleNavMoreFlatten);
-  window.addEventListener("orientationchange", scheduleNavMoreFlatten);
+  window.addEventListener("resize", scheduleNavDockViewportCheck);
+  window.addEventListener("orientationchange", scheduleNavDockViewportCheck);
 
-  // === 全局导航：More 钉在首行末端，切换首行以下项的展开/折叠 ===
+  // === 移动端仓库主页：左侧悬浮导航（复用 More 检测与下拉收割逻辑） ===
   // 策略：
-  // 1) 把 More 下拉项与既有导航项合并成有序列表，放进 nav 容器。
-  // 2) flex-wrap 自动换行；其余项在 DOM 顺序上“绕过” More（首行项 → More → 其余项）。
-  // 3) More 始终占首行末端；点击展开/折叠首行以下的行。
-  const NAV_MORE_STYLE_ID = "mgga-nav-more-flatten-style";
-  const NAV_MORE_ITEM_ATTR = "data-mgga-nav-more-item";
-  const NAV_MORE_FLOW_ATTR = "data-mgga-nav-flow";
-  const NAV_MORE_TOGGLE_ATTR = "data-mgga-nav-more-toggle";
-  const NAV_MORE_OVERFLOW_ATTR = "data-mgga-nav-overflow";
-  const NAV_MORE_HOST_ATTR = "data-mgga-nav-host";
-  let navMoreObserver = null;
-  let navMoreDebounce = null;
-  let navMoreHarvesting = false;
-  let navMoreExpanded = false;
-  let navMoreToggleBound = false;
+  // 1) 仅在移动端手机设备访问 /:owner/:repo 仓库主页时启用。
+  // 2) 扫描主页所有含 More Toggle 的导航条形栏（全局头部 nav、仓库标签条 UnderlineNav、主内容区 nav 容器）。
+  // 3) 逐栏定位 More 触发器并收割其下拉面板内导航项（复用 findMoreTrigger / findMoreMenu / extractMenuItems / harvestMoreItems）。
+  // 4) 将各栏收割项与既有导航项按顺序合并、去重，渲染为左侧悬浮导航栏（悬浮球 + 可展开面板）。
+  // 5) 不改动原生页面 DOM（原生 More 行为保持不变）；SPA 导航后按新路径重建。
+  const NAV_DOCK_ID = "mgga-mobile-nav-dock";
+  const NAV_DOCK_TOGGLE_ID = "mgga-mobile-nav-dock-toggle";
+  const NAV_DOCK_STYLE_ID = "mgga-mobile-nav-dock-style";
+  let navDockObserver = null;
+  let navDockDebounce = null;
+  let navDockBuilding = false;
+  let navDockExpanded = false;
+  let navDockHarvestCache = null;
 
-  function isNavMoreFlattenEnabled() {
-    return GM_getValue("navMoreFlatten", true);
+  /** 同步悬浮球与面板的展开态 UI（点击悬浮球与油猴菜单共用，过渡对齐 Release 设置面板） */
+  function setNavDockExpanded(expanded) {
+    navDockExpanded = !!expanded;
+    const panel = document.getElementById(NAV_DOCK_ID);
+    const fab = document.getElementById(NAV_DOCK_TOGGLE_ID);
+    if (panel) {
+      panel.setAttribute("data-expanded", navDockExpanded ? "true" : "false");
+      // 对齐 Release 设置面板：.visible 类驱动 translateX(-100%) → 0 滑入滑出
+      panel.classList.toggle("mgga-visible", navDockExpanded);
+    }
+    if (fab) {
+      fab.setAttribute("aria-expanded", navDockExpanded ? "true" : "false");
+      fab.title = navDockExpanded ? i18n.t("mobileNavDockCollapse") : i18n.t("mobileNavDockExpand");
+      fab.setAttribute("aria-label", fab.title);
+      // 面板展开时悬浮球像 Release 悬浮按钮被设置面板接管时一样右移淡出
+      fab.classList.toggle("mgga-dock-fab-hidden", navDockExpanded);
+    }
   }
 
-  function injectNavMoreFlattenStyle() {
-    const existing = document.getElementById(NAV_MORE_STYLE_ID);
-    if (!isNavMoreFlattenEnabled()) {
-      if (existing) existing.remove();
-      document.documentElement.classList.remove("mgga-nav-more-flatten");
+  /** 油猴菜单：仅切换面板展开/收起；悬浮球未就绪时先即时构建，非仓库主页时通知提示 */
+  async function toggleNavDockPanelFromMenu() {
+    if (!isRepoHomePath()) {
+      console.info(
+        "[MGGA] nav dock: menu toggle ignored, not a repo home path",
+        location.pathname
+      );
+      try {
+        if (typeof GM_notification === "function") {
+          GM_notification({
+            text: i18n.t("navDockUnavailable"),
+            title: i18n.t("mobileNavDock"),
+          });
+        }
+      } catch (_) {
+        /* ignore */
+      }
       return;
     }
-    if (existing) return;
+    // 悬浮球尚未出现（页面初始化中或早退）时先构建一次
+    if (!document.getElementById(NAV_DOCK_TOGGLE_ID)) {
+      await applyMobileNavDock();
+    }
+    if (!document.getElementById(NAV_DOCK_TOGGLE_ID)) {
+      console.warn("[MGGA] nav dock: FAB unavailable after build");
+      return;
+    }
+    setNavDockExpanded(!navDockExpanded);
+  }
 
+  function isRepoHomePath() {
+    const m = location.pathname.match(/^\/([^/]+)\/([^/]+)\/?$/);
+    if (!m) return false;
+    const reserved = new Set([
+      "orgs", "topics", "collections", "trending", "features", "marketplace",
+      "pulls", "issues", "notifications", "explore", "sponsors", "settings",
+      "account", "search", "gist", "about", "pricing", "apps", "codespaces",
+      "developer", "security", "enterprise", "login", "logout", "join",
+      "new", "import", "dashboard", "watching", "forks", "stars"
+    ]);
+    return !reserved.has(m[1]) && !reserved.has(m[2]);
+  }
+
+  function injectNavDockStyle() {
+    if (document.getElementById(NAV_DOCK_STYLE_ID)) return;
     const style = document.createElement("style");
-    style.id = NAV_MORE_STYLE_ID;
+    style.id = NAV_DOCK_STYLE_ID;
     style.setAttribute("data-mgga-mutation-guard", "1");
     style.textContent = `
-      /* MGGA: More pinned to first row end; overflow rows expand/collapse */
-      html.mgga-nav-more-flatten {
-        --AppHeader-height: auto !important;
+      /* MGGA: mobile repo home floating nav dock */
+      #mgga-mobile-nav-dock-toggle {
+        position: fixed !important;
+        left: 1em !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        z-index: 2147483000 !important;
+        width: 44px !important;
+        height: 44px !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border-radius: 50% !important;
+        border: 1px solid var(--borderColor-default, var(--color-border-default, rgba(125, 125, 125, 0.45))) !important;
+        background: var(--bgColor-default, var(--color-canvas-default, #ffffff)) !important;
+        color: var(--fgColor-default, var(--color-fg-default, #1f2328)) !important;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22) !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        cursor: pointer !important;
+        line-height: 1 !important;
       }
 
-      html.mgga-nav-more-flatten .js-header-wrapper,
-      html.mgga-nav-more-flatten .header-wrapper,
-      html.mgga-nav-more-flatten header.AppHeader,
-      html.mgga-nav-more-flatten .AppHeader,
-      html.mgga-nav-more-flatten .AppHeader-globalBar,
-      html.mgga-nav-more-flatten header nav {
-        height: auto !important;
-        max-height: none !important;
-        min-height: 0 !important;
+      /* 对齐 Release 悬浮按钮：拖拽/显隐过渡节奏一致 */
+      #mgga-mobile-nav-dock-toggle {
+        transition: opacity 0.4s ease, margin-left 0.4s ease, background 0.2s ease !important;
       }
 
-      html.mgga-nav-more-flatten [${NAV_MORE_HOST_ATTR}],
-      html.mgga-nav-more-flatten header nav,
-      html.mgga-nav-more-flatten header nav > div,
-      html.mgga-nav-more-flatten header nav > ul,
-      html.mgga-nav-more-flatten .AppHeader-nav,
-      html.mgga-nav-more-flatten .AppHeader-list {
+      /* 面板展开时悬浮球像 Release 设置面板打开时一样右移淡出 */
+      #mgga-mobile-nav-dock-toggle.mgga-dock-fab-hidden {
+        opacity: 0 !important;
+        pointer-events: none !important;
+        margin-left: 2em !important;
+      }
+
+      #mgga-mobile-nav-dock-toggle > svg {
+        width: 18px !important;
+        height: 18px !important;
+        pointer-events: none !important;
+      }
+
+      #mgga-mobile-nav-dock-toggle .mgga-nav-dock-badge {
+        position: absolute !important;
+        top: -4px !important;
+        right: -4px !important;
+        min-width: 16px !important;
+        height: 16px !important;
+        padding: 0 4px !important;
+        border-radius: 8px !important;
+        background: #0969da !important;
+        color: #ffffff !important;
+        font-size: 10px !important;
+        font-weight: 600 !important;
+        line-height: 16px !important;
+        text-align: center !important;
+        pointer-events: none !important;
+      }
+
+      /* 对齐 Release 设置面板：初始左侧屏外 + 淡出，展开滑入；
+         垂直居中锚定，高度随内容自适应但绝不出屏 */
+      #mgga-mobile-nav-dock {
+        position: fixed !important;
+        left: 1em !important;
+        top: 50% !important;
+        z-index: 2147483001 !important;
+        width: fit-content !important;
+        min-width: min(56vw, 220px) !important;
+        max-width: min(80vw, 360px) !important;
+        max-height: calc(100vh - 1em) !important;
+        max-height: calc(100dvh - 1em) !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        box-sizing: border-box !important;
+        padding: 6px !important;
+        border-radius: 12px !important;
+        border: 1px solid var(--borderColor-default, var(--color-border-default, rgba(125, 125, 125, 0.45))) !important;
+        background: var(--bgColor-default, var(--color-canvas-default, #ffffff)) !important;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28) !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+        transform: translateY(-50%) translateX(-100%) !important;
+        transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease !important;
+      }
+
+      #mgga-mobile-nav-dock.mgga-visible {
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto !important;
+        transform: translateY(-50%) translateX(0) !important;
+      }
+
+      /* 面板标题栏：对齐 Release 设置面板 header + 关闭按钮 */
+      #mgga-mobile-nav-dock .mgga-nav-dock-header {
         display: flex !important;
-        flex-wrap: wrap !important;
         align-items: center !important;
-        align-content: flex-start !important;
-        row-gap: 4px !important;
-        column-gap: 2px !important;
-        max-width: 100% !important;
-        box-sizing: border-box !important;
-        overflow: visible !important;
+        justify-content: space-between !important;
+        padding: 2px 4px 6px !important;
+        margin-bottom: 2px !important;
+        border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted, rgba(125, 125, 125, 0.25))) !important;
       }
 
-      html.mgga-nav-more-flatten [${NAV_MORE_FLOW_ATTR}],
-      html.mgga-nav-more-flatten [${NAV_MORE_ITEM_ATTR}] {
-        display: inline-flex !important;
-        align-items: center !important;
-        flex: 0 0 auto !important;
-        white-space: nowrap !important;
-        max-width: 100% !important;
-        box-sizing: border-box !important;
+      #mgga-mobile-nav-dock .mgga-nav-dock-header-title {
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        color: var(--fgColor-muted, var(--color-fg-muted, #59636e)) !important;
       }
 
-      html.mgga-nav-more-flatten [${NAV_MORE_ITEM_ATTR}] {
-        color: var(--fgColor-default, var(--color-fg-default, inherit)) !important;
-        text-decoration: none !important;
+      #mgga-mobile-nav-dock .mgga-nav-dock-close {
+        background: transparent !important;
+        border: none !important;
+        color: var(--fgColor-muted, var(--color-fg-muted, #59636e)) !important;
+        cursor: pointer !important;
+        padding: 2px 6px !important;
         border-radius: 6px !important;
-        padding: 4px 8px !important;
         font-size: 14px !important;
-        line-height: 21px !important;
-        opacity: 0.92;
+        line-height: 1.2 !important;
       }
 
-      html.mgga-nav-more-flatten [${NAV_MORE_ITEM_ATTR}]:hover {
-        background: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(127,127,127,0.15))) !important;
-        opacity: 1;
+      #mgga-mobile-nav-dock .mgga-nav-dock-close:hover {
+        color: var(--fgColor-default, var(--color-fg-default, #1f2328)) !important;
+        background: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(127, 127, 127, 0.18))) !important;
       }
 
-      html.mgga-nav-more-flatten [${NAV_MORE_ITEM_ATTR}] svg {
-        width: 1em !important;
-        height: 1em !important;
-        margin-right: 0.35em !important;
-        flex-shrink: 0 !important;
-      }
-
-      /* More：始终可见、钉在首行末端语义位置 */
-      html.mgga-nav-more-flatten [${NAV_MORE_TOGGLE_ATTR}] {
-        display: inline-flex !important;
+      /* 克隆复用的原控件：布局由面板接管，视觉（配色/字号/内边距/hover）
+         交给 GitHub 原生类（UnderlineNav-item 等），保证与页面无差异 */
+      #mgga-mobile-nav-dock a {
+        display: flex !important;
         align-items: center !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        margin: 0 !important;
+        white-space: nowrap !important;
+      }
+
+      /* 手工兑底条目（无源锚点可克隆时）沿用原面板视觉 */
+      #mgga-mobile-nav-dock a.mgga-nav-dock-fallback {
+        gap: 8px !important;
+        padding: 8px 10px !important;
+        border-radius: 8px !important;
+        color: var(--fgColor-default, var(--color-fg-default, #1f2328)) !important;
+        text-decoration: none !important;
+        font-size: 14px !important;
+        line-height: 1.35 !important;
+        background: transparent !important;
+      }
+
+      #mgga-mobile-nav-dock a.mgga-nav-dock-fallback:hover,
+      #mgga-mobile-nav-dock a.mgga-nav-dock-fallback:active {
+        background: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(127, 127, 127, 0.18))) !important;
+        text-decoration: none !important;
+      }
+
+      #mgga-mobile-nav-dock a > svg {
+        width: 16px !important;
+        height: 16px !important;
+        flex: 0 0 auto !important;
+      }
+
+      /* 计数器胶囊：克隆自 GitHub 原生 .Counter，视觉样式由原生 CSS 生效；
+         此处仅防缩水不覆盖观感 */
+      #mgga-mobile-nav-dock .Counter {
         flex: 0 0 auto !important;
         white-space: nowrap !important;
-        box-sizing: border-box !important;
-        z-index: 2;
-      }
-
-      /* 首行以下的项：折叠时隐藏，展开时显示并换行 */
-      html.mgga-nav-more-flatten [${NAV_MORE_OVERFLOW_ATTR}="1"][data-mgga-nav-collapsed="1"] {
-        display: none !important;
-      }
-
-      html.mgga-nav-more-flatten [${NAV_MORE_OVERFLOW_ATTR}="1"] {
         display: inline-flex !important;
+        align-items: center !important;
       }
 
-      /* 原 More 下拉面板不再弹出 */
-      html.mgga-nav-more-flatten [data-mgga-nav-more-dropdown] {
-        display: none !important;
+      #mgga-mobile-nav-dock .mgga-nav-dock-label {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
       }
     `;
-    document.documentElement.classList.add("mgga-nav-more-flatten");
     document.head.appendChild(style);
+  }
+
+  function removeNavDock() {
+    const panel = document.getElementById(NAV_DOCK_ID);
+    if (panel) panel.remove();
+    const fab = document.getElementById(NAV_DOCK_TOGGLE_ID);
+    if (fab) fab.remove();
+    navDockExpanded = false;
   }
 
   function findHeaderNav() {
@@ -4376,22 +4503,35 @@
       .trim();
   }
 
+  /**
+   * 锚点纯净标签：剔除计数器节点后取文本。
+   * GitHub 导航 tab 的 textContent 形如 "Issues1.8k (1.8k)"（可见计数器 +
+   * 响应式替换计数器），直接取会污染标签并在面板里与胶囊重复。
+   */
+  function navDockAnchorLabel(a) {
+    if (!a) return "";
+    const clone = a.cloneNode(true);
+    clone
+      .querySelectorAll(
+        ".Counter, [data-component='Counter'], .js-nav-count-replace, [class*='ounter']"
+      )
+      .forEach((el) => el.remove());
+    return normalizedText(clone);
+  }
+
   function isMoreLabel(text) {
     if (!text) return false;
-    return /^(more|更多|더보기|もっと見る|mehr|plus|⋯|\.\.\.)$/i.test(text.trim());
+    // 文件区导航的 More 按钮文本为 "More items"（带隐藏后缀），需前缀匹配
+    const t = String(text).replace(/\s+/g, " ").trim().toLowerCase();
+    return /^(more|更多|더보기|もっと見る|mehr|plus|⋯|\.\.\.|more items)/i.test(t) && t.length <= 16;
   }
 
   function findMoreTrigger(nav) {
     if (!nav) return null;
     // 已接管的 toggle 优先
-    const bound = nav.querySelector(`[${NAV_MORE_TOGGLE_ATTR}]`);
-    if (bound) return bound;
-
     const candidates = nav.querySelectorAll("button, a, summary, [role=button]");
     for (const el of candidates) {
       if (!(el instanceof HTMLElement)) continue;
-      if (el.hasAttribute(NAV_MORE_ITEM_ATTR)) continue;
-      if (el.hasAttribute(NAV_MORE_FLOW_ATTR) && el.getAttribute(NAV_MORE_FLOW_ATTR) === "1" && el.tagName === "A") continue;
       const label =
         el.getAttribute("aria-label") ||
         el.getAttribute("data-more") ||
@@ -4453,7 +4593,6 @@
     const anchors = menuRoot.querySelectorAll("a[href]");
     anchors.forEach((a) => {
       if (!(a instanceof HTMLAnchorElement)) return;
-      if (a.hasAttribute(NAV_MORE_ITEM_ATTR)) return;
       const href = a.getAttribute("href");
       if (!href || href === "#" || href.startsWith("javascript:")) return;
       const label = a.getAttribute("aria-label") || normalizedText(a);
@@ -4529,356 +4668,549 @@
     return items;
   }
 
-  function pickNavHost(nav, trigger) {
-    if (trigger) {
-      const host = trigger.closest("ul, [class*='list'], div");
-      if (host && nav.contains(host) && host !== nav) return host;
-    }
-    const direct = nav.querySelector(":scope > ul, :scope > div");
-    return direct || nav;
+  /** 导航条形栏的稳定缓存键：aria-label + 类名前缀 */
+  function navBarKey(bar) {
+    if (!bar) return "";
+    const aria = bar.getAttribute("aria-label") || "";
+    const cls = String(bar.className || "").slice(0, 100);
+    return aria + "|" + cls;
   }
 
-  function clearFlattenedItems() {
-    document
-      .querySelectorAll(`[${NAV_MORE_ITEM_ATTR}]`)
-      .forEach((el) => el.remove());
-    document
-      .querySelectorAll(`[${NAV_MORE_FLOW_ATTR}]`)
-      .forEach((el) => {
-        el.removeAttribute(NAV_MORE_FLOW_ATTR);
-        el.removeAttribute(NAV_MORE_OVERFLOW_ATTR);
-        el.removeAttribute("data-mgga-nav-collapsed");
-        el.removeAttribute("style");
-      });
-    document
-      .querySelectorAll(`[${NAV_MORE_HOST_ATTR}]`)
-      .forEach((el) => el.removeAttribute(NAV_MORE_HOST_ATTR));
-    document.querySelectorAll("[data-mgga-nav-more-dropdown]").forEach((el) => {
-      el.removeAttribute("data-mgga-nav-more-dropdown");
-    });
-    document.querySelectorAll(`[${NAV_MORE_TOGGLE_ATTR}]`).forEach((el) => {
-      el.removeAttribute(NAV_MORE_TOGGLE_ATTR);
-      el.removeAttribute("data-mgga-nav-collapsed");
-    });
-    navMoreExpanded = false;
-    navMoreToggleBound = false;
+  /** 视口宽度分桶（100px 一桶）：桌面切移动端调试时桶变化触发重收割 */
+  function navDockViewportBucket() {
+    return Math.round(window.innerWidth / 100);
   }
 
-  function buildFlattenedAnchor(item) {
-    const a = document.createElement("a");
-    a.href = item.href;
-    a.setAttribute(NAV_MORE_ITEM_ATTR, "1");
-    a.title = item.label;
-    a.setAttribute("aria-label", item.label);
-    const icon = item.source ? item.source.querySelector("svg") : null;
-    if (icon) {
-      a.appendChild(icon.cloneNode(true));
-    }
-    a.appendChild(document.createTextNode(item.label));
-    return a;
-  }
-
-  function hideNativeMoreDropdown(trigger) {
-    const menu = findMoreMenu(trigger);
-    if (menu && menu !== trigger && !(trigger instanceof HTMLDetailsElement)) {
-      menu.setAttribute("data-mgga-nav-more-dropdown", "1");
-      if (menu instanceof HTMLElement) {
-        menu.hidden = true;
-      }
-    }
-  }
-
-  function ensureMoreToggle(trigger) {
-    if (!trigger) return null;
-    trigger.setAttribute(NAV_MORE_TOGGLE_ATTR, "1");
-    // 接管点击：不再打开 GitHub 原生下拉
-    if (!navMoreToggleBound) {
-      trigger.addEventListener(
-        "click",
-        (e) => {
-          if (!isNavMoreFlattenEnabled()) return;
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-          navMoreExpanded = !navMoreExpanded;
-          layoutNavMoreRows();
-        },
-        true
-      );
-      navMoreToggleBound = true;
-    }
-    // 若是 <details>/<summary>，阻止原生展开
-    if (trigger.tagName === "SUMMARY" && trigger.parentElement instanceof HTMLDetailsElement) {
-      trigger.parentElement.open = false;
-    }
-    if (trigger instanceof HTMLDetailsElement) {
-      trigger.open = false;
-    }
-    return trigger;
-  }
-
-  function updateMoreToggleUI(trigger) {
-    if (!trigger) return;
-    trigger.setAttribute("aria-expanded", navMoreExpanded ? "true" : "false");
-    trigger.title = navMoreExpanded
-      ? i18n.t("navMoreCollapse")
-      : i18n.t("navMoreExpand");
-    trigger.setAttribute(
-      "aria-label",
-      isMoreLabel(normalizedText(trigger))
-        ? normalizedText(trigger)
-        : trigger.title
-    );
-    trigger.setAttribute("data-mgga-nav-collapsed", navMoreExpanded ? "0" : "1");
-  }
-
-  function collectFlowItems(host) {
-    if (!host) return [];
-    const nodes = host.querySelectorAll("a[href], button, summary, [role=button]");
+  function collectRepoHomeNavItems(navList, harvestedByBar) {
     const items = [];
-    nodes.forEach((el) => {
-      if (!(el instanceof HTMLElement)) return;
-      if (el.hasAttribute(NAV_MORE_TOGGLE_ATTR)) return;
-      if (el.closest("[data-mgga-nav-more-dropdown]")) return;
-      // 仅收集导航容器内、可见结构上的链接/按钮
-      const inHost = host.contains(el) || el.parentElement === host;
-      if (!inHost) return;
-      // 跳过明显非导航项
-      if (el.matches("[hidden], [data-mgga-nav-more-source]")) return;
-      if (el.getAttribute("aria-haspopup") === "true" && el.querySelector("img[alt]")) return;
-      items.push(el);
-    });
-    // 去重、保持 DOM 顺序
     const seen = new Set();
-    return items.filter((el) => {
-      if (seen.has(el)) return false;
+    // React 客户端路由 tab（如文件区 README）的 href 为 "#"，
+    // 但带 aria-current 选中态，是真实导航项；落地到当前页路径
+    const pushItem = (href, label, source) => {
+      if (!href || href.startsWith("javascript:")) return;
+      const selectedAnchor =
+        source instanceof HTMLAnchorElement &&
+        (source.hasAttribute("aria-current") || source.hasAttribute("data-selected"));
+      if (href === "#" && !selectedAnchor) return;
+      if (href === "#" && selectedAnchor) {
+        href = location.pathname;
+      }
+      if (!label) return;
+      label = String(label).replace(/\s+/g, " ").trim();
+      if (!label || isMoreLabel(label)) return;
+      const key = href + "|" + label;
+      if (seen.has(key)) return;
+      seen.add(key);
+      items.push({ href, label, source: source || null });
+    };
+
+    // 仓库主页路径下无导航意义的锚点：面包屑 owner/repo、当前路径自链。
+    // 注意：真实 tab（Code/README）也可能命中这些 href，但它们带选中态
+    // 标记（aria-current / data-selected），据此放行。
+    const repoHomeRe = /^\/[^/]+(\/[^/]+)?\/?$/;
+    const isSelectedTab = (a) =>
+      a.hasAttribute("aria-current") ||
+      a.hasAttribute("data-selected") ||
+      a.getAttribute("data-selected-links") != null;
+    const isBreadcrumbish = (a) => {
+      const href = a.getAttribute("href") || "";
+      if (!href || href.startsWith("#") || href === location.pathname) return !isSelectedTab(a);
+      if (!repoHomeRe.test(href)) return false;
+      return !isSelectedTab(a);
+    };
+
+    // 遍历每个导航条形栏，按 DOM 顺序索引既有导航项
+    (navList || []).forEach((nav) => {
+      // 全局 Marketing 头部（未登录首页大菜单）与页脚不属仓库导航
+      if (nav.closest("footer")) return;
+      const navAria = (nav.getAttribute("aria-label") || "").toLowerCase();
+      if (navAria === "global" || navAria === "footer") return;
+
+      nav.querySelectorAll("a[href]").forEach((a) => {
+        if (!(a instanceof HTMLAnchorElement)) return;
+        if (a.matches("[hidden]")) return;
+        // 隐藏包装元素（UnderlineNav wrap spacer 等）内的内容不索引
+        if (a.closest('[aria-hidden="true"]')) return;
+        if (a.closest("footer")) return;
+        // 跳过 dock 自身条目与标题栏关闭按钮等
+        if (a.closest(`#${NAV_DOCK_ID}`)) return;
+        const label = a.getAttribute("aria-label") || navDockAnchorLabel(a);
+        if (isMoreLabel(label)) return;
+        // 面包屑类条目（owner、owner/repo、页内锚点）无导航意义，剔除
+        if (isBreadcrumbish(a)) return;
+        pushItem(a.getAttribute("href"), label, a);
+      });
+
+      // 本栏 More 下拉收割项紧跟在本栏可见项之后：溢出项在 GitHub 侧
+      // 本就位于本栏尾部，按栏归位可还原正确的导航顺序
+      const barHarvest = harvestedByBar && harvestedByBar.get(navBarKey(nav));
+      if (barHarvest) {
+        barHarvest.forEach((it) => pushItem(it.href, it.label, it.source));
+      }
+    });
+
+    return items;
+  }
+
+  /** 仓库主页所有导航条形栏：全域扫描 nav 容器（含头部、仓库标签条、文件区），排除页脚与自身 dock */
+  function findRepoHomeNavBars() {
+    const bars = [];
+    const seen = new Set();
+    const addBar = (el) => {
+      if (!el || seen.has(el)) return;
+      if (el.closest("footer")) return;
+      if (el.id === NAV_DOCK_ID) return;
       seen.add(el);
-      return true;
+      bars.push(el);
+    };
+
+    // 1) 全局头部导航（React 注水后出现，可能为空）
+    addBar(findHeaderNav());
+
+    // 2) 仓库标签条（UnderlineNav / 仓库页 tab 栏）
+    document
+      .querySelectorAll(
+        ".UnderlineNav, nav.UnderlineNav, [class*='UnderlineSoup'], .js-repo-nav"
+      )
+      .forEach(addBar);
+
+    // 3) 全域扫描 nav 语义容器：新版 React 仓库页的分栏/文件区 nav 不在首个 main 内，
+    //    需扫整个 body；页脚与自身 dock 已排除，面板项由去重收敕
+    document.querySelectorAll("nav").forEach(addBar);
+
+    // 仅保留含 More 触发器或导航链接的条形栏
+    return bars.filter((bar) => {
+      if (findMoreTrigger(bar)) return true;
+      return bar.querySelector("a[href]") !== null;
     });
   }
 
-  function measureWidth(el) {
-    if (!(el instanceof HTMLElement)) return 0;
-    const rect = el.getBoundingClientRect();
-    if (rect.width > 0) return rect.width;
-    // display:none 时用临时显示测宽
-    const prev = el.style.display;
-    el.style.display = "inline-flex";
-    const w = el.getBoundingClientRect().width;
-    el.style.display = prev;
-    return w || 0;
+  function navDockSignature(items) {
+    const s = items.map((it) => it.href + "\u0001" + it.label).join("\u0002");
+    let h = 0;
+    for (let i = 0; i < s.length; i++) {
+      h = (h * 31 + s.charCodeAt(i)) | 0;
+    }
+    return items.length + ":" + h;
   }
 
   /**
-   * 布局：
-   * - 其余导航项按 DOM 顺序依次排列、自动换行
-   * - More 固定在首行末端：首行只能放下“若干项 + More”
-   * - 首行以下的项标为 overflow；折叠时隐藏，展开时显示
+   * 整体复用原控件：深克隆源锚点，图标/文本/原生计数器胶囊/主题样式全部保留。
+   * 不移动原节点 —— GitHub React 需要原节点留在原位，克隆是安全且样式保真的折中。
+   * 克隆后仅做净化：去重复 id/热键/分析属性、修正 # 占位 href、
+   * 保留首个非零计数器胶囊、移除响应式重复计数器与图标的响应式隐藏类。
    */
-  function layoutNavMoreRows() {
-    const nav = findHeaderNav();
-    if (!nav || !isNavMoreFlattenEnabled()) return;
-    const trigger = findMoreTrigger(nav) || nav.querySelector(`[${NAV_MORE_TOGGLE_ATTR}]`);
-    if (!trigger) return;
+  function collectNavDockOriginalAnchor(item) {
+    const src = item.source;
+    if (!(src instanceof HTMLAnchorElement)) return null;
+    const clone = src.cloneNode(true);
 
-    const host =
-      trigger.closest(`[${NAV_MORE_HOST_ATTR}]`) ||
-      pickNavHost(nav, trigger);
-    if (!host) return;
-    host.setAttribute(NAV_MORE_HOST_ATTR, "1");
+    // 去除会引发框架接管/重复行为的属性
+    const dropAttrs = [
+      "id",
+      "aria-current",
+      "aria-expanded",
+      "aria-controls",
+      "data-selected",
+      "data-selected-links",
+      "data-hotkey",
+      "data-command-id",
+      "data-tab-item",
+      "data-react-nav",
+      "data-analytics-event",
+      "data-pjax",
+      "data-pjax-replace",
+      "data-turbo-frame",
+      "data-turbo-replace",
+      "data-target",
+      "data-action",
+    ];
+    dropAttrs.forEach((attr) => clone.removeAttribute(attr));
 
-    const items = collectFlowItems(host);
-    const hostWidth = host.clientWidth || host.getBoundingClientRect().width;
-    if (!hostWidth || !items.length) {
-      updateMoreToggleUI(trigger);
-      return;
-    }
+    // href 修正：# 占位 tab（README 等）落地为当前页路径
+    let href = item.href || clone.getAttribute("href") || "";
+    if (href === "#") href = location.pathname;
+    clone.setAttribute("href", href);
 
-    // 布局签名：项数 + 容器宽度 + 展开状态；未变化时跳过重排，避免与自身
-    // observer 形成"变更 → 重排 → 变更"循环并减少反复测宽/重排开销
-    const signature = `${items.length}|${Math.round(hostWidth)}|${navMoreExpanded ? 1 : 0}`;
-    if (host.dataset.mggaNavLayoutSig === signature) {
-      updateMoreToggleUI(trigger);
-      return;
-    }
-    host.dataset.mggaNavLayoutSig = signature;
-
-    const hostStyle = getComputedStyle(host);
-    const colGap = parseFloat(hostStyle.columnGap) || 4;
-    const moreW = measureWidth(trigger) + colGap;
-
-    // 先全部标成可测宽（折叠态下 overflow 可能是 none）
-    const prevCollapsed = navMoreExpanded;
-    items.forEach((el) => {
-      if (el.getAttribute(NAV_MORE_OVERFLOW_ATTR) === "1") {
-        el.setAttribute("data-mgga-nav-collapsed", "0");
-      }
-    });
-
-    // 贪心装入首行：为 More 预留末位
-    let used = moreW;
-    const firstRow = [];
-    const rest = [];
-    for (const el of items) {
-      const w = measureWidth(el) + colGap;
-      if (firstRow.length === 0 || used + w <= hostWidth + 0.5) {
-        firstRow.push(el);
-        used += w;
-      } else {
-        rest.push(el);
-      }
-    }
-
-    // 重排 DOM：首行项 → More → 其余项（其余项“绕过” More）
-    const frag = document.createDocumentFragment();
-    firstRow.forEach((el) => {
-      el.removeAttribute(NAV_MORE_OVERFLOW_ATTR);
-      el.removeAttribute("data-mgga-nav-collapsed");
-      frag.appendChild(el);
-    });
-    frag.appendChild(trigger);
-    rest.forEach((el) => {
-      el.setAttribute(NAV_MORE_OVERFLOW_ATTR, "1");
-      frag.appendChild(el);
-    });
-    host.appendChild(frag);
-
-    // 应用折叠/展开
-    rest.forEach((el) => {
-      el.setAttribute("data-mgga-nav-collapsed", navMoreExpanded ? "0" : "1");
-    });
-    updateMoreToggleUI(trigger);
-
-    // 容器允许增高
-    host.style.flexWrap = "wrap";
-    host.style.display = "flex";
-    host.style.maxWidth = "100%";
-    nav.style.flexWrap = "wrap";
-    nav.style.height = "auto";
-
-    // 若无 overflow，More 仍钉在末端，点击无害
-    if (!rest.length) {
-      trigger.setAttribute("aria-expanded", "false");
-    }
-    void prevCollapsed;
-  }
-
-  async function applyNavMoreFlatten() {
-    injectNavMoreFlattenStyle();
-    if (!isNavMoreFlattenEnabled()) {
-      clearFlattenedItems();
-      if (navMoreObserver) {
-        navMoreObserver.disconnect();
-        navMoreObserver = null;
-      }
-      return;
-    }
-
-    if (navMoreHarvesting) return;
-    const nav = findHeaderNav();
-    if (!nav) return;
-    let trigger = findMoreTrigger(nav);
-    if (!trigger) {
-      setupNavMoreObserver();
-      return;
-    }
-
-    navMoreHarvesting = true;
-    try {
-      // 收割 More 下拉项（若尚未展开到导航）
-      let harvested = extractMenuItems(findMoreMenu(trigger));
-      if (!harvested.length) {
-        harvested = await harvestMoreItems(trigger);
-      }
-
-      const host = pickNavHost(nav, trigger);
-      if (!host) {
-        setupNavMoreObserver();
-        return;
-      }
-      host.setAttribute(NAV_MORE_HOST_ATTR, "1");
-
-      // 去重：已存在的 href 不再重复插入
-      const existingHrefs = new Set(
-        Array.from(host.querySelectorAll("a[href]")).map((a) =>
-          a.getAttribute("href")
-        )
-      );
-      const toInsert = harvested.filter((it) => !existingHrefs.has(it.href));
-      if (toInsert.length) {
-        // 插在 More 原位置前；layout 阶段会再按首行/溢出重排
-        const frag = document.createDocumentFragment();
-        toInsert.forEach((item) => frag.appendChild(buildFlattenedAnchor(item)));
-        if (trigger.parentElement === host) {
-          host.insertBefore(frag, trigger);
-        } else {
-          host.appendChild(frag);
-        }
-      }
-
-      // 既有导航链接标记为 flow，便于统一测量换行
-      host.querySelectorAll("a[href]").forEach((a) => {
-        if (a.hasAttribute(NAV_MORE_TOGGLE_ATTR)) return;
-        if (a.closest("[data-mgga-nav-more-dropdown]")) return;
-        a.setAttribute(NAV_MORE_FLOW_ATTR, "1");
+    // 克隆内部：去 id，防 DOM 重复；去框架接管属性
+    clone.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
+    clone
+      .querySelectorAll(
+        "[data-pjax], [data-pjax-replace], [data-turbo-frame], [data-turbo-replace]"
+      )
+      .forEach((el) => {
+        el.removeAttribute("data-pjax");
+        el.removeAttribute("data-pjax-replace");
+        el.removeAttribute("data-turbo-frame");
+        el.removeAttribute("data-turbo-replace");
       });
 
-      // 接管 More：成为首行末端开关；隐藏原生下拉
-      trigger = ensureMoreToggle(trigger);
-      hideNativeMoreDropdown(trigger);
-
-      layoutNavMoreRows();
-    } finally {
-      navMoreHarvesting = false;
-      setupNavMoreObserver();
+    // 计数器胶囊：仅保留首个非零原生 .Counter，移除响应式重复计数
+    const counterEls = Array.from(
+      clone.querySelectorAll("[class*='Counter']")
+    );
+    const primary = counterEls[0];
+    counterEls.slice(1).forEach((el) => el.remove());
+    if (primary) {
+      const t = (primary.textContent || "").trim();
+      if (!t || t === "0") {
+        primary.remove();
+      } else {
+        primary.removeAttribute("hidden");
+      }
     }
+    // 响应式替换计数（形如 "(1.8k)" 的孤立胶囊）不进入面板，避免读屏/视觉重复
+    clone.querySelectorAll("span").forEach((el) => {
+      const t = (el.textContent || "").trim();
+      if (/^\([\d.,]+[kKmM]?\)$/.test(t)) el.remove();
+    });
+
+    // 图标：剥离 GitHub 响应式隐藏类，窄面板下图标不再消失
+    clone.querySelectorAll("svg").forEach((svg) => {
+      svg.classList.remove("d-none", "d-sm-inline", "d-md-inline", "d-lg-inline");
+    });
+
+    clone.classList.add("mgga-nav-dock-clone");
+    clone.setAttribute("data-mgga-mutation-guard", "1");
+    return clone;
   }
 
-  function scheduleNavMoreFlatten() {
-    if (!isNavMoreFlattenEnabled()) return;
-    if (navMoreDebounce) clearTimeout(navMoreDebounce);
-    navMoreDebounce = setTimeout(() => {
-      navMoreDebounce = null;
-      // 已接管且 host 存在时只需重排，避免重复收割
-      const host = document.querySelector(`[${NAV_MORE_HOST_ATTR}]`);
-      if (host && host.querySelector(`[${NAV_MORE_TOGGLE_ATTR}]`)) {
-        layoutNavMoreRows();
+  function buildNavDockPanel(items) {
+    const panel = document.createElement("div");
+    panel.id = NAV_DOCK_ID;
+    panel.setAttribute("role", "navigation");
+    panel.setAttribute("aria-label", i18n.t("mobileNavDock"));
+    panel.setAttribute("data-expanded", navDockExpanded ? "true" : "false");
+    panel.classList.toggle("mgga-visible", navDockExpanded);
+    panel.setAttribute("data-mgga-mutation-guard", "1");
+
+    // 标题栏 + 关闭按钮：对齐 Release 设置面板结构
+    const header = document.createElement("div");
+    header.className = "mgga-nav-dock-header";
+    const title = document.createElement("span");
+    title.className = "mgga-nav-dock-header-title";
+    title.textContent = i18n.t("mobileNavDock");
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "mgga-nav-dock-close";
+    closeBtn.textContent = "✕";
+    closeBtn.setAttribute("aria-label", i18n.t("close"));
+    closeBtn.title = i18n.t("close");
+    closeBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setNavDockExpanded(false);
+    });
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+    panel.appendChild(header);
+
+    const frag = document.createDocumentFragment();
+    items.forEach((item) => {
+      // 优先整体复用原控件（含图标与原生计数器胶囊），仅无源锚点时手工绘制
+      const reused = collectNavDockOriginalAnchor(item);
+      if (reused) {
+        reused.title = item.label;
+        reused.setAttribute("aria-label", item.label);
+        frag.appendChild(reused);
         return;
       }
-      applyNavMoreFlatten();
-    }, 120);
+
+      const a = document.createElement("a");
+      a.className = "mgga-nav-dock-fallback";
+      a.href = item.href;
+      // 计数器先提取：回退路径会同步清理 item.label，
+      // 保证 title / aria-label / 可见文案三者一致
+      const counter = extractNavDockCounter(item);
+      a.title = item.label;
+      a.setAttribute("aria-label", item.label);
+
+      // 图标：源锚点内联 svg 优先；收割项（ActionMenu）常无图标，
+      // 回退到源锚点外层 li 的图标，再回退到内置 octicon 路径映射
+      const icon = item.source ? item.source.querySelector("svg") : null;
+      if (icon) {
+        a.appendChild(icon.cloneNode(true));
+      } else {
+        const liIcon =
+          item.source && item.source.closest
+            ? item.source.closest("li")?.querySelector("svg")
+            : null;
+        if (liIcon) {
+          a.appendChild(liIcon.cloneNode(true));
+        } else {
+          const fallback = buildNavDockFallbackIcon(item.label);
+          if (fallback) a.appendChild(fallback);
+        }
+      }
+
+      const label = document.createElement("span");
+      label.className = "mgga-nav-dock-label";
+      label.textContent = item.label;
+      a.appendChild(label);
+
+      if (counter) {
+        a.appendChild(counter);
+      }
+      frag.appendChild(a);
+    });
+    panel.appendChild(frag);
+    return panel;
   }
 
-  function setupNavMoreObserver() {
-    if (navMoreObserver) {
-      navMoreObserver.disconnect();
-      navMoreObserver = null;
+  /** 内置 octicon 16x16 路径映射：收割项无图标时的兑底 */
+  function buildNavDockFallbackIcon(label) {
+    const ICON_PATHS = {
+      code: "M4.72 3.22a.75.75 0 0 1 1.06 1.06L2.06 8l3.72 3.72a.75.75 0 1 1-1.06 1.06L.47 8.53a.75.75 0 0 1 0-1.06Zm6.56 0a.75.75 0 1 1 1.06-1.06l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L14.44 8Z",
+      issue: "M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z",
+      pull: "M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.25 2.25 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.25 2.25 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z",
+      shield: "M7.467.133a1.75 1.75 0 0 1 1.066 0l5.25 1.68A1.75 1.75 0 0 1 15 3.48V7c0 1.566-.32 3.182-1.303 4.682-.983 1.498-2.585 2.813-5.032 3.855a1.697 1.697 0 0 1-1.33 0c-2.447-1.042-4.049-2.357-5.032-3.855C1.32 10.182 1 8.566 1 7V3.48a1.75 1.75 0 0 1 1.217-1.667Zm.61 1.429a.25.25 0 0 0-.153 0l-5.25 1.68a.25.25 0 0 0-.174.238V7c0 1.358.275 2.666 1.057 3.86.784 1.194 2.121 2.34 4.366 3.297a.196.196 0 0 0 .154 0c2.245-.956 3.582-2.104 4.366-3.298C13.225 9.666 13.5 8.36 13.5 7V3.48a.251.251 0 0 0-.174-.237l-5.25-1.68ZM8.75 4.75v3a.75.75 0 0 1-1.5 0v-3a.75.75 0 0 1 1.5 0ZM9 10.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z",
+      graph: "M1.5 1.75V13.5h13.75a.75.75 0 0 1 0 1.5H.75a.75.75 0 0 1-.75-.75V1.75a.75.75 0 0 1 1.5 0Zm14.28 2.53-5.25 5.25a.75.75 0 0 1-1.06 0L7 7.06 4.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0L9 7.94l4.72-4.72a.75.75 0 1 1 1.06 1.06Z",
+      eye: "M8 2c1.981 0 3.671.992 4.933 2.078 1.27 1.091 2.187 2.345 2.637 3.023a1.62 1.62 0 0 1 0 1.798c-.45.678-1.367 1.932-2.637 3.023C11.67 13.008 9.981 14 8 14c-1.981 0-3.671-.992-4.933-2.078C1.797 10.83.88 9.576.43 8.898a1.62 1.62 0 0 1 0-1.798c.45-.677 1.367-1.931 2.637-3.022C4.33 2.992 6.019 2 8 2ZM1.679 7.932a.12.12 0 0 0 0 .136c.411.622 1.241 1.75 2.366 2.717C5.176 11.758 6.527 12.5 8 12.5c1.473 0 2.825-.742 3.955-1.715 1.124-.967 1.954-2.096 2.366-2.717a.12.12 0 0 0 0-.136c-.412-.621-1.242-1.75-2.366-2.717C10.824 4.242 9.473 3.5 8 3.5c-1.473 0-2.825.742-3.955 1.715-1.124.967-1.954 2.096-2.366 2.717ZM8 10a2 2 0 1 1-.001-3.999A2 2 0 0 1 8 10Z",
+      play: "M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM6.379 5.227A.25.25 0 0 0 6 5.442v5.117a.25.25 0 0 0 .379.214l4.264-2.559a.25.25 0 0 0 0-.428Z",
+      table: "M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0 1 14.25 16H1.75A1.75 1.75 0 0 1 0 14.25ZM6.5 6.5v8h7.75a.25.25 0 0 0 .25-.25V6.5Zm8-1.5V1.75a.25.25 0 0 0-.25-.25H6.5V5Zm-9.5 1.5H1.5v7.75c0 .138.112.25.25.25H5Zm0-1.5V1.5H1.75a.25.25 0 0 0-.25.25V5Z",
+      gear: "M8 0a8.2 8.2 0 0 1 .701.031C9.444.095 9.99.645 10.16 1.29l.288 1.107c.018.066.079.158.212.224.231.114.454.243.668.386.123.082.233.09.299.071l1.103-.303c.644-.176 1.392.021 1.82.63.27.385.506.792.704 1.218.315.675.111 1.422-.364 1.891l-.814.806c-.049.048-.098.147-.088.294.016.257.016.515 0 .772-.01.147.039.246.088.294l.814.806c.475.469.679 1.216.364 1.891a7.977 7.977 0 0 1-.704 1.217c-.428.61-1.176.807-1.82.63l-1.102-.302c-.067-.019-.177-.011-.3.071a5.909 5.909 0 0 1-.668.386c-.133.066-.194.158-.211.224l-.29 1.106c-.168.646-.715 1.196-1.458 1.26a8.006 8.006 0 0 1-1.402 0c-.743-.064-1.289-.614-1.458-1.26l-.289-1.106c-.018-.066-.079-.158-.212-.224a5.738 5.738 0 0 1-.668-.386c-.123-.082-.233-.09-.299-.071l-1.103.303c-.644.176-1.392-.021-1.82-.63a8.12 8.12 0 0 1-.704-1.218c-.315-.675-.111-1.422.363-1.891l.815-.806c.05-.048.098-.147.088-.294a6.214 6.214 0 0 1 0-.772c.01-.147-.038-.246-.088-.294l-.815-.806C.635 6.045.431 5.298.746 4.623a7.92 7.92 0 0 1 .704-1.217c.428-.61 1.176-.807 1.82-.63l1.102.302c.067.019.177.011.3-.071.214-.143.437-.272.668-.386.133-.066.194-.158.211-.224l.29-1.106C6.009.645 6.556.095 7.299.03 7.53.01 7.764 0 8 0Zm-.571 1.525c-.036.003-.108.036-.137.146l-.289 1.105c-.147.561-.549.967-.998 1.189-.173.086-.34.183-.5.29-.417.278-.97.423-1.529.27l-1.103-.303c-.109-.03-.175.016-.195.045-.22.312-.412.644-.573.99-.014.031-.021.11.059.19l.815.806c.411.406.562.957.53 1.456a4.709 4.709 0 0 0 0 .582c.032.499-.119 1.05-.53 1.456l-.815.806c-.081.08-.073.159-.059.19.162.346.353.677.573.989.02.03.085.076.195.046l1.102-.303c.56-.153 1.113-.008 1.53.27.161.107.328.204.501.29.447.222.85.629.997 1.189l.289 1.105c.029.109.101.143.137.146a6.6 6.6 0 0 0 1.142 0c.036-.003.108-.036.137-.146l.289-1.105c.147-.561.549-.967.998-1.189.173-.086.34-.183.5-.29.417-.278.97-.423 1.529-.27l1.103.303c.109.029.175-.016.195-.045.22-.313.411-.644.573-.99.014-.031.021-.11-.059-.19l-.815-.806c-.411-.406-.562-.957-.53-1.456a4.709 4.709 0 0 0 0-.582c-.032-.499.119-1.05.53-1.456l.815-.806c.081-.08.073-.159.059-.19a6.464 6.464 0 0 0-.573-.989c-.02-.03-.085-.076-.195-.046l-1.102.303c-.56.153-1.113.008-1.53-.27a4.44 4.44 0 0 0-.501-.29c-.447-.222-.85-.629-.997-1.189l-.289-1.105c-.029-.11-.101-.143-.137-.146a6.6 6.6 0 0 0-1.142 0ZM11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM9.5 8a1.5 1.5 0 1 0-3.001.001A1.5 1.5 0 0 0 9.5 8Z",
+    };
+    const key = String(label || "").toLowerCase();
+    let d = null;
+    if (key.includes("security")) d = ICON_PATHS.shield;
+    else if (key.includes("insight")) d = ICON_PATHS.graph;
+    else if (key.includes("pull")) d = ICON_PATHS.pull;
+    else if (key.includes("issue")) d = ICON_PATHS.issue;
+    else if (key.includes("action")) d = ICON_PATHS.play;
+    else if (key.includes("project")) d = ICON_PATHS.table;
+    else if (key.includes("discussion")) d = ICON_PATHS.gear;
+    else if (key.includes("watch")) d = ICON_PATHS.eye;
+    else if (key.includes("code")) d = ICON_PATHS.code;
+    if (!d) return null;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("width", "16");
+    svg.setAttribute("height", "16");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("fill", "currentColor");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    svg.appendChild(path);
+    return svg;
+  }
+
+  /**
+   * 提取计数器胶囊：优先克隆源锚点内的原生 .Counter（保真样式），
+   * 回退从标签文本尾部括号计数（如 "Pull requests97 (97)"）重建一个。
+   */
+  function extractNavDockCounter(item) {
+    const src = item.source;
+    if (src && src.querySelector) {
+      const native = src.querySelector(".Counter, [data-component='Counter']");
+      if (native) {
+        const clone = native.cloneNode(true);
+        clone.removeAttribute("id");
+        return clone;
+      }
     }
-    if (!isNavMoreFlattenEnabled()) return;
-    const nav = findHeaderNav();
-    const watchRoot =
-      (nav && nav.closest(".js-header-wrapper, .header-wrapper, header, .AppHeader")) ||
-      nav ||
-      document.body;
-    if (!watchRoot) return;
-    navMoreObserver = new MutationObserver((mutations) => {
-      // 忽略本脚本自身产生的变更（样式注入 / 守卫标记 / 折叠属性切换）
+    // 回退：标签尾部的 "1.8k (1.8k)" 或 "97 (97)" 形式（GitHub 侧计数器
+    // 与文本紧贴，无空白分隔），读屏文本重复
+    const m = String(item.label || "").match(/((?:[\d.,]+[kKmM]?)\s*\((?:[\d.,]+[kKmM]?)\))$/);
+    if (!m) return null;
+    const counter = document.createElement("span");
+    counter.className = "Counter";
+    counter.textContent = m[1].split("(")[0].trim();
+    item.label = item.label.slice(0, m.index).trim();
+    return counter;
+  }
+
+  function buildNavDockFab() {
+    const fab = document.createElement("button");
+    fab.id = NAV_DOCK_TOGGLE_ID;
+    fab.type = "button";
+    fab.title = navDockExpanded ? i18n.t("mobileNavDockCollapse") : i18n.t("mobileNavDockExpand");
+    fab.setAttribute("aria-label", fab.title);
+    fab.setAttribute("aria-expanded", navDockExpanded ? "true" : "false");
+    fab.setAttribute("aria-controls", NAV_DOCK_ID);
+    fab.setAttribute("data-mgga-mutation-guard", "1");
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("viewBox", "0 0 16 16");
+    icon.setAttribute("aria-hidden", "true");
+    icon.setAttribute("fill", "currentColor");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute(
+      "d",
+      "M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 2.75Zm0 5A.75.75 0 0 1 1.75 7h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 7.75ZM1.75 12h12.5a.75.75 0 0 1 0 1.5H1.75a.75.75 0 0 1 0-1.5Z"
+    );
+    icon.appendChild(path);
+    fab.appendChild(icon);
+    return fab;
+  }
+
+  function updateNavDockFabBadge(fab, count) {
+    if (!fab) return;
+    let badge = fab.querySelector(".mgga-nav-dock-badge");
+    if (!count) {
+      if (badge) badge.remove();
+      return;
+    }
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "mgga-nav-dock-badge";
+      fab.appendChild(badge);
+    }
+    badge.textContent = count > 99 ? "99+" : String(count);
+  }
+
+  function bindNavDockFab(fab, panel) {
+    fab.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setNavDockExpanded(!navDockExpanded);
+    });
+  }
+
+  async function buildNavDock() {
+    if (navDockBuilding) return;
+    navDockBuilding = true;
+    try {
+      // 不依赖全局头部 nav：移动端可能无头部 nav 元素，直接扫描所有导航条形栏
+      const navBars = findRepoHomeNavBars();
+
+      // 按栏收割 More 下拉项，并按栏归位排序（溢出项紧跟本栏可见项之后）。
+      // 缓存键 = 路径 + 视口宽度桶：桌面切移动端调试时 GitHub 会把溢出项
+      // 挪进 More（可见项减少），桶变化触发重收割，面板不缩水。
+      // 注意：空收割不作为有效缓存 —— React 注水前可能扫不到触发器。
+      const cacheKey = location.pathname + "#" + navDockViewportBucket();
+      let harvestedByBar = null;
+      if (
+        navDockHarvestCache &&
+        navDockHarvestCache.key === cacheKey &&
+        navDockHarvestCache.byBar
+      ) {
+        harvestedByBar = navDockHarvestCache.byBar;
+      } else {
+        harvestedByBar = new Map();
+        for (const bar of navBars) {
+          const trigger = findMoreTrigger(bar);
+          if (!trigger) continue;
+          let menuItems = [];
+          try {
+            menuItems = extractMenuItems(findMoreMenu(trigger));
+            if (!menuItems.length) {
+              menuItems = await harvestMoreItems(trigger);
+            }
+          } catch (err) {
+            console.warn("[MGGA] nav dock: harvest failed for one bar:", err);
+          }
+          if (menuItems.length) {
+            harvestedByBar.set(navBarKey(bar), menuItems);
+          }
+        }
+        if (harvestedByBar.size) {
+          navDockHarvestCache = { key: cacheKey, byBar: harvestedByBar };
+        }
+      }
+
+      const items = collectRepoHomeNavItems(navBars, harvestedByBar);
+      if (!items.length) {
+        // React 渐进注水：首轮可能扫不到任何导航项，有界重试等注水完成
+        const attempt = Number(buildNavDock.attempt || 0);
+        if (attempt < 6) {
+          buildNavDock.attempt = attempt + 1;
+          setTimeout(() => {
+            if (
+              isRepoHomePath() &&
+              !document.getElementById(NAV_DOCK_TOGGLE_ID)
+            ) {
+              buildNavDock();
+            }
+          }, 500);
+        } else {
+          buildNavDock.attempt = 0;
+          console.warn(
+            "[MGGA] nav dock: no nav items indexed on repo home",
+            location.pathname
+          );
+          removeNavDock();
+        }
+        return;
+      }
+      buildNavDock.attempt = 0;
+
+      const existing = document.getElementById(NAV_DOCK_ID);
+      const signature = navDockSignature(items);
+      // 旧版结构（无标题栏/过渡类）与新结构不兼容，通过结构版本号强制重建一次
+      const STRUCT_VER = "4";
+      if (
+        existing &&
+        existing.dataset.mggaNavDockSig === signature &&
+        existing.dataset.mggaNavDockVer === STRUCT_VER
+      ) {
+        updateNavDockFabBadge(
+          document.getElementById(NAV_DOCK_TOGGLE_ID),
+          items.length
+        );
+        return;
+      }
+
+      injectNavDockStyle();
+      const freshPanel = buildNavDockPanel(items);
+      freshPanel.dataset.mggaNavDockSig = signature;
+      freshPanel.dataset.mggaNavDockVer = STRUCT_VER;
+      const freshFab = buildNavDockFab();
+      bindNavDockFab(freshFab, freshPanel);
+      updateNavDockFabBadge(freshFab, items.length);
+      if (existing) existing.remove();
+      const existingFab = document.getElementById(NAV_DOCK_TOGGLE_ID);
+      if (existingFab) existingFab.remove();
+      document.body.appendChild(freshPanel);
+      document.body.appendChild(freshFab);
+    } finally {
+      navDockBuilding = false;
+    }
+  }
+
+  async function applyMobileNavDock() {
+    // 激活条件：仓库主页；悬浮球常驻显示，所有设备（含桌面）可用
+    if (!isRepoHomePath()) {
+      removeNavDock();
+      if (navDockObserver) {
+        navDockObserver.disconnect();
+        navDockObserver = null;
+      }
+      return;
+    }
+    try {
+      await buildNavDock();
+      setupNavDockObserver();
+    } catch (err) {
+      console.error("[MGGA] nav dock: build failed:", err);
+    }
+  }
+
+  function scheduleNavDockViewportCheck() {
+    if (navDockDebounce) clearTimeout(navDockDebounce);
+    navDockDebounce = setTimeout(() => {
+      navDockDebounce = null;
+      applyMobileNavDock();
+    }, 200);
+  }
+
+  function setupNavDockObserver() {
+    if (navDockObserver) {
+      navDockObserver.disconnect();
+      navDockObserver = null;
+    }
+    // 监视整个 body：React 注水会陆续渲染头部 nav 与文件区 nav，
+    // 仅监视头部会漏掉文件区注水；重建由签名短路去抖
+    navDockObserver = new MutationObserver((mutations) => {
+      // 忽略本脚本自身产生的变更（样式注入 / dock DOM / 守卫标记）
       for (const mutation of mutations) {
         const t = mutation.target;
-        if (
-          t &&
-          t.nodeType === 1 &&
-          t.closest &&
-          (t.closest("[data-mgga-mutation-guard]") ||
-            t.hasAttribute("data-mgga-nav-collapsed"))
-        ) {
+        if (t && t.nodeType === 1 && t.closest && t.closest("[data-mgga-mutation-guard]")) {
           continue;
         }
-        scheduleNavMoreFlatten();
+        scheduleNavDockViewportCheck();
         return;
       }
     });
-    navMoreObserver.observe(watchRoot, { childList: true, subtree: true });
+    navDockObserver.observe(document.body, { childList: true, subtree: true });
   }
 
   // === Turbo/SPA 导航与初始化 ===
@@ -4888,7 +5220,7 @@
     spaNavTimer = setTimeout(() => {
       // 移动端布局修正：所有仓库页都重新应用（不限 Release）
       applyMobileLayoutFix();
-      applyNavMoreFlatten();
+      applyMobileNavDock();
       if (isReleasesPage()) {
         applyColors();
         processAssets();
@@ -4914,9 +5246,9 @@
 
   // 初始执行
   if (document.body) {
-    applyNavMoreFlatten();
+    applyMobileNavDock();
   } else {
-    document.addEventListener("DOMContentLoaded", () => applyNavMoreFlatten(), { once: true });
+    document.addEventListener("DOMContentLoaded", () => applyMobileNavDock(), { once: true });
   }
   if (isReleasesPage()) {
     processAssets();
