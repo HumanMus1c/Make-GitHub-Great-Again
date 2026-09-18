@@ -2,9 +2,9 @@
 // @name                    Make-GitHub-Great-Again
 // @name:en                 Make-GitHub-Great-Again
 // @namespace               https://github.com
-// @version                 2026.9.17
-// @description             为 Release 的项目添加背景色，识别文件系统平台类型，以及高亮自定义关键词
-// @description:en          Add background colors to each Release Asset, identify the file system platform type and custom keywords highlighter.
+// @version                 2026.9.21
+// @description             为 Release 的项目添加背景色，识别文件系统平台类型，以及高亮自定义关键词；修正移动端仓库页右侧空白列
+// @description:en          Add background colors to each Release Asset, identify the file system platform type and custom keywords highlighter. Fix empty right column on mobile.
 // @author                  https://github.com/HumanMus1c
 // @match                   https://github.com/*/*
 // @grant                   GM_addStyle
@@ -42,6 +42,10 @@
         confirmReset: { zh: "确定要重置 {theme} 主题的自定义颜色吗？", en: "Are you sure you want to reset the custom colors for {theme} theme?" },
         darkTheme: { zh: "暗色", en: "Dark" },
         lightTheme: { zh: "亮色", en: "Light" },
+        oddRowShort: { zh: "奇数行", en: "Odd row" },
+        evenRowShort: { zh: "偶数行", en: "Even row" },
+        hoverShort: { zh: "悬停", en: "Hover" },
+        invalidColor: { zh: "颜色格式无效，请输入 6 位 HEX 颜色（如 #f8f9fa）", en: "Invalid color. Please enter a 6-digit HEX color (e.g. #f8f9fa)" },
         menuSettings: { zh: "⚙️ 设置", en: "⚙️ Settings" },
         menuOdd: { zh: "⚙️ 设置奇数行颜色", en: "⚙️ Set Odd Row Color" },
         menuEven: { zh: "⚙️ 设置偶数行颜色", en: "⚙️ Set Even Row Color" },
@@ -54,11 +58,56 @@
         noKeywords: { zh: "暂无自定义关键词", en: "No custom keywords" },
         defaultTag: { zh: "默认", en: "Default" },
         restore: { zh: "恢复", en: "Restore" },
-        deleteRule: { zh: "删除", en: "Delete" }
+        deleteRule: { zh: "删除", en: "Delete" },
+        mobileFix: { zh: "修正仓库头按钮溢出", en: "Fix repo header button overflow" },
+        navMoreFlatten: { zh: "导航栏 More 多行开关", en: "Nav More multi-line toggle" },
+        navMoreExpand: { zh: "展开首行以下导航项", en: "Expand nav rows below first line" },
+        navMoreCollapse: { zh: "收起首行以下导航项", en: "Collapse nav rows below first line" }
       };
       return texts[key] ? (this.isCN ? texts[key].zh : texts[key].en) : key;
     }
   };
+
+  // === 颜色消毒工具：所有进入 innerHTML/样式表的颜色值统一走此函数 ===
+  function sanitizeHexColor(value, fallback = "#ffeb3b") {
+    if (typeof value !== "string") return fallback;
+    const hex = value.trim();
+    // 可选 # 前缀 + 3 位缩写展开 / 6 位完整形式
+    const m = /^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.exec(hex);
+    if (!m) return fallback;
+    const raw = m[1];
+    if (raw.length === 3) {
+      const [a, b, c] = raw.split("");
+      return ("#" + a + a + b + b + c + c).toLowerCase();
+    }
+    return ("#" + raw).toLowerCase();
+  }
+
+  // === HTML 文本转义工具 ===
+  function escapeHtmlText(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // === 主题关键词颜色缓存（避免高亮函数在每次正则替换中反复 GM_getValue）===
+  let cachedThemeColors = {
+    userCustomKeywords: [],
+    defaultColorOverrides: {},
+    version: 0,
+  };
+  function refreshThemeColorsCache() {
+    cachedThemeColors = {
+      userCustomKeywords: GM_getValue("userCustomKeywords", []),
+      defaultColorOverrides: GM_getValue("defaultColorOverrides", {}),
+      version: cachedThemeColors.version + 1,
+    };
+    return cachedThemeColors;
+  }
+  refreshThemeColorsCache();
 
   // 更可靠的主题检测函数
   function getCurrentTheme() {
@@ -109,12 +158,17 @@
   // 创建样式元素并添加到文档头部
   const styleElement = document.createElement("style");
   styleElement.id = "Make-GitHub-Great-Again-style";
+  styleElement.setAttribute("data-mgga-mutation-guard", "1");
   document.head.appendChild(styleElement);
 
   // 应用颜色的函数 - 根据当前主题动态更新样式
   function applyColors(overrides = null) {
     if (!isReleasesPage()) {
-      styleElement.textContent = "";
+      if (styleElement.textContent !== "") {
+        styleElement.textContent = "";
+        styleElement.remove();
+        document.head.appendChild(styleElement);
+      }
       return;
     }
 
@@ -131,13 +185,13 @@
     // 动态更新样式
     styleElement.textContent = `
             .Box.Box--condensed li.Box-row:nth-child(odd) {
-                background-color: ${isOddEnabled ? colors.oddRowColor : "transparent"} !important;
+                background-color: ${isOddEnabled ? sanitizeHexColor(colors.oddRowColor, "#f8f9fa") : "transparent"} !important;
             }
             .Box.Box--condensed li.Box-row:nth-child(even) {
-                background-color: ${isEvenEnabled ? colors.evenRowColor : "transparent"} !important;
+                background-color: ${isEvenEnabled ? sanitizeHexColor(colors.evenRowColor, "#ffffff") : "transparent"} !important;
             }
             .Box.Box--condensed li.Box-row:hover {
-                background-color: ${isHoverEnabled ? colors.hoverColor : "transparent"} !important;
+                background-color: ${isHoverEnabled ? sanitizeHexColor(colors.hoverColor, "#e9ecef") : "transparent"} !important;
             }
         `;
 
@@ -418,8 +472,8 @@
             box-shadow: 0 0.15em 1.5em rgba(0,0,0,0.2);
             z-index: 10000;
             min-width: 0 !important;
-            width: min(20em, calc(100vw - 2em));
-            max-width: calc(100vw - 2em);
+            width: min(20em, calc(100% - 2em));
+            max-width: calc(100% - 2em);
             /* 视口限高：内容再高也不会顶出屏幕，由内部滚动 */
             max-height: calc(100vh - 1em);
             max-height: calc(100dvh - 1em);
@@ -1300,18 +1354,24 @@
             <div class="color-picker-content">
                 <div class="color-picker-row">
                     <span class="menu-command"><button class="color-toggle-btn" id="toggleOddRowBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("oddRow")}</span>
-                    <button class="color-button" id="oddRowColorBtn" style="background-color: ${customColors.oddRowColor}"></button>
+                    <button class="color-button" id="oddRowColorBtn" style="background-color: ${sanitizeHexColor(customColors.oddRowColor, "#f8f9fa")}"></button>
                 </div>
                 <div class="color-picker-row">
                     <span class="menu-command"><button class="color-toggle-btn" id="toggleEvenRowBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("evenRow")}</span>
-                    <button class="color-button" id="evenRowColorBtn" style="background-color: ${customColors.evenRowColor}"></button>
+                    <button class="color-button" id="evenRowColorBtn" style="background-color: ${sanitizeHexColor(customColors.evenRowColor, "#ffffff")}"></button>
                 </div>
                 <div class="color-picker-row">
                     <span class="menu-command"><button class="color-toggle-btn" id="toggleHoverBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("hoverRow")}</span>
-                    <button class="color-button" id="hoverColorBtn" style="background-color: ${customColors.hoverColor}"></button>
+                    <button class="color-button" id="hoverColorBtn" style="background-color: ${sanitizeHexColor(customColors.hoverColor, "#e9ecef")}"></button>
                 </div>
                 <div class="color-picker-row">
                     <span class="menu-command"><button class="color-toggle-btn" id="svgToggleBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("svgIdentify")}</span>
+                </div>
+                <div class="color-picker-row">
+                    <span class="menu-command"><button class="color-toggle-btn" id="mobileFixToggleBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("mobileFix")}</span>
+                </div>
+                <div class="color-picker-row">
+                    <span class="menu-command"><button class="color-toggle-btn" id="navMoreFlattenToggleBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("navMoreFlatten")}</span>
                 </div>
                 <div style="margin-top: 0.75em; border-top: 1px solid rgba(125, 125, 125, 0.2); padding-top: 0.75em;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5em;">
@@ -1410,6 +1470,46 @@
       });
     }
 
+    // 初始化移动端右侧空白修正开关
+    const mobileFixToggleBtn = dialog.querySelector("#mobileFixToggleBtn");
+    if (mobileFixToggleBtn) {
+      let isMobileFixEnabled = GM_getValue("mobileLayoutFix", true);
+      const updateMobileFixBtnUI = (enabled) => {
+        mobileFixToggleBtn.classList.toggle("disabled", !enabled);
+        mobileFixToggleBtn.innerHTML = enabled ? "✓" : "✕";
+        mobileFixToggleBtn.title = enabled ? i18n.t("enabledTitle") : i18n.t("disabledTitle");
+      };
+      updateMobileFixBtnUI(isMobileFixEnabled);
+      mobileFixToggleBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        isMobileFixEnabled = !isMobileFixEnabled;
+        GM_setValue("mobileLayoutFix", isMobileFixEnabled);
+        updateMobileFixBtnUI(isMobileFixEnabled);
+        applyMobileLayoutFix();
+      });
+    }
+
+    // 初始化导航栏 More 展开开关
+    const navMoreFlattenToggleBtn = dialog.querySelector("#navMoreFlattenToggleBtn");
+    if (navMoreFlattenToggleBtn) {
+      let isNavMoreFlattenEnabled = GM_getValue("navMoreFlatten", true);
+      const updateNavMoreFlattenBtnUI = (enabled) => {
+        navMoreFlattenToggleBtn.classList.toggle("disabled", !enabled);
+        navMoreFlattenToggleBtn.innerHTML = enabled ? "✓" : "✕";
+        navMoreFlattenToggleBtn.title = enabled ? i18n.t("enabledTitle") : i18n.t("disabledTitle");
+      };
+      updateNavMoreFlattenBtnUI(isNavMoreFlattenEnabled);
+      navMoreFlattenToggleBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        isNavMoreFlattenEnabled = !isNavMoreFlattenEnabled;
+        GM_setValue("navMoreFlatten", isNavMoreFlattenEnabled);
+        updateNavMoreFlattenBtnUI(isNavMoreFlattenEnabled);
+        applyNavMoreFlatten();
+      });
+    }
+
     // 初始化关键词高亮切换状态
     const highlightToggleBtn = dialog.querySelector("#highlightToggleBtn");
     if (highlightToggleBtn) {
@@ -1442,14 +1542,7 @@
     const confirmBtn = dialog.querySelector(".confirm-button");
     const resetBtn = dialog.querySelector(".reset-button");
 
-    // 验证和规范化HEX颜色值
-    const validateHexColor = (hex) => {
-      const hexRegex = /^#?([a-fA-F0-9]{6}|[a-fA-F0-9]{3})$/;
-      if (hexRegex.test(hex)) {
-        return hex.startsWith("#") ? hex : "#" + hex;
-      }
-      return null;
-    };
+    // HEX 验证/规范化统一使用全局 sanitizeHexColor（见文件头部工具区）
 
     const defaultColors =
       getCurrentTheme() === "dark" ? defaultColorsDark : defaultColorsLight;
@@ -2234,25 +2327,25 @@
     };
 
     // 颜色按钮点击事件
-    const handleColorBtnClick = (e, btn, name) => {
+    const handleColorBtnClick = (e, btn, key, displayName) => {
       e.stopPropagation();
       const currentColor = btn.style.backgroundColor ||
-                          (name === "奇数行" ? customColors.oddRowColor :
-                           name === "偶数行" ? customColors.evenRowColor :
+                          (key === "odd" ? customColors.oddRowColor :
+                           key === "even" ? customColors.evenRowColor :
                            customColors.hoverColor);
-      toggleColorPickerPanel(btn, name, currentColor);
+      toggleColorPickerPanel(btn, displayName || key, currentColor);
     };
 
     oddRowColorBtn.addEventListener("click", (e) => {
-      handleColorBtnClick(e, oddRowColorBtn, "奇数行");
+      handleColorBtnClick(e, oddRowColorBtn, "odd", i18n.t("oddRowShort"));
     });
 
     evenRowColorBtn.addEventListener("click", (e) => {
-      handleColorBtnClick(e, evenRowColorBtn, "偶数行");
+      handleColorBtnClick(e, evenRowColorBtn, "even", i18n.t("evenRowShort"));
     });
 
     hoverColorBtn.addEventListener("click", (e) => {
-      handleColorBtnClick(e, hoverColorBtn, "悬停");
+      handleColorBtnClick(e, hoverColorBtn, "hover", i18n.t("hoverShort"));
     });
 
     // === 禁用/启用上色功能切换按钮 ===
@@ -2260,11 +2353,11 @@
       if (isEnabled) {
         btn.classList.remove("disabled");
         btn.innerHTML = "✓";
-        btn.title = "已启用，点击禁用";
+        btn.title = i18n.t("enabledTitle");
       } else {
         btn.classList.add("disabled");
         btn.innerHTML = "✕";
-        btn.title = "已禁用，点击启用";
+        btn.title = i18n.t("disabledTitle");
       }
     };
 
@@ -2320,7 +2413,10 @@
 
       if (
         confirm(
-          `确定要重置${resetTheme === "dark" ? "暗色" : "亮色"}主题的自定义颜色吗？`,
+          i18n.t("confirmReset").replace(
+            "{theme}",
+            resetTheme === "dark" ? i18n.t("darkTheme") : i18n.t("lightTheme"),
+          ),
         )
       ) {
         // 删除当前主题的自定义颜色设置
@@ -2377,6 +2473,8 @@
       if (typeof window.initializeArchStyles === "function") {
         window.initializeArchStyles();
       }
+      // 同步主题色缓存（自定义关键词/覆盖可能已变化）
+      refreshThemeColorsCache();
       if (typeof processAssets === "function") {
         document
           .querySelectorAll(".Box.Box--condensed li.Box-row")
@@ -2420,12 +2518,13 @@
         item.className = classes.join(" ");
 
         const useAutoColor = rule.isDefault && !rule.isOverridden;
+        const safeRuleText = escapeHtmlText(rule.text);
         const swatchClass = useAutoColor
           ? `keyword-color-swatch arch-highlight ${archClassNameOf(rule.text)}`
           : "keyword-color-swatch";
         const swatchStyle = useAutoColor
           ? ""
-          : `background-color: ${rule.color || "#ffeb3b"};`;
+          : `background-color: ${sanitizeHexColor(rule.color, "#ffeb3b")};`;
         const actionClass = rule.pendingDelete
           ? "keyword-action-btn keyword-restore"
           : "keyword-action-btn keyword-remove";
@@ -2436,7 +2535,7 @@
 
         item.innerHTML = `
                     <span class="${swatchClass}" style="${swatchStyle}" data-swatch="${index}" title="${i18n.t("keywordColor")}"></span>
-                    <span class="keyword-text">${rule.text}</span>
+                    <span class="keyword-text">${safeRuleText}</span>
                     ${rule.isDefault ? `<span class="keyword-default-tag">${i18n.t("defaultTag")}</span>` : ""}
                     <span class="${actionClass}" data-action="${index}" title="${actionTitle}">${actionIcon}</span>
                 `;
@@ -2529,7 +2628,7 @@
           return rgb;
         };
 
-        const hexColor = rgbToHex(color);
+        const hexColor = sanitizeHexColor(rgbToHex(color), "#ffeb3b");
 
         if (text) {
           const existingIndex = rules.findIndex(
@@ -2637,6 +2736,9 @@
       GM_setValue("userCustomKeywords", savedUserKeywords);
       GM_setValue("defaultColorOverrides", savedOverrides);
       GM_setValue("deletedDefaults", savedDeletedDefaults);
+
+      // 同步主题色缓存（高亮函数使用）
+      refreshThemeColorsCache();
 
       closeDialog(dialog);
       applyColors(); // 动态更新颜色
@@ -2797,6 +2899,16 @@
   }
 
   // 注册油猴菜单选项
+  GM_registerMenuCommand(i18n.t("mobileFix"), () => {
+    const next = !GM_getValue("mobileLayoutFix", true);
+    GM_setValue("mobileLayoutFix", next);
+    applyMobileLayoutFix();
+  });
+  GM_registerMenuCommand(i18n.t("navMoreFlatten"), () => {
+    const next = !GM_getValue("navMoreFlatten", true);
+    GM_setValue("navMoreFlatten", next);
+    applyNavMoreFlatten();
+  });
   GM_registerMenuCommand(i18n.t("menuSettings"), createColorPickerDialog);
 
   // 独立的菜单命令
@@ -2816,11 +2928,16 @@
       currentColor,
     );
     if (newColor) {
+      const sanitizedColor = sanitizeHexColor(newColor, "");
+      if (!sanitizedColor) {
+        alert(i18n.t("invalidColor"));
+        return;
+      }
       // 获取或创建当前主题的自定义颜色
       const updatedColors = customColors
         ? { ...customColors }
         : { ...defaultColors };
-      updatedColors.oddRowColor = newColor;
+      updatedColors.oddRowColor = sanitizedColor;
 
       // 保存更新
       GM_setValue(themeKey, updatedColors);
@@ -2844,11 +2961,16 @@
       currentColor,
     );
     if (newColor) {
+      const sanitizedColor = sanitizeHexColor(newColor, "");
+      if (!sanitizedColor) {
+        alert(i18n.t("invalidColor"));
+        return;
+      }
       // 获取或创建当前主题的自定义颜色
       const updatedColors = customColors
         ? { ...customColors }
         : { ...defaultColors };
-      updatedColors.evenRowColor = newColor;
+      updatedColors.evenRowColor = sanitizedColor;
 
       // 保存更新
       GM_setValue(themeKey, updatedColors);
@@ -2872,11 +2994,16 @@
       currentColor,
     );
     if (newColor) {
+      const sanitizedColor = sanitizeHexColor(newColor, "");
+      if (!sanitizedColor) {
+        alert(i18n.t("invalidColor"));
+        return;
+      }
       // 获取或创建当前主题的自定义颜色
       const updatedColors = customColors
         ? { ...customColors }
         : { ...defaultColors };
-      updatedColors.hoverColor = newColor;
+      updatedColors.hoverColor = sanitizedColor;
 
       // 保存更新
       GM_setValue(themeKey, updatedColors);
@@ -3342,6 +3469,31 @@
     return yiq < 128; // 小于128认为是暗色
   }
 
+  // ===== 基于识别算法 v2 的图标兑底匹配 =====
+  // 既有三重关键词规则（扩展名 → 压缩包系统词 → 全关键词）都未命中时，
+  // 用 parseFileNameArchitecture 的 OS 归一识别（含 win64/win32/nt 等
+  // systemKeywords 未收录的别名，以及下划线复合词拆分）反查 iconRules。
+  // 只映射到已有的六个规则，不会引入新图标，故零回归风险。
+  const OS_CANON_TO_RULE_NAME = {
+    windows: "Windows",
+    macos: "Apple",
+    linux: "Linux",
+    android: "Android",
+    ios: "iOS",
+    freebsd: "Linux",
+    openbsd: "Linux",
+    netbsd: "Linux",
+    dragonfly: "Linux",
+  };
+
+  function findIconRuleV2(fileNameLower) {
+    const parsed = parseFileNameArchitecture(fileNameLower);
+    if (!parsed.os) return null;
+    const ruleName = OS_CANON_TO_RULE_NAME[parsed.os];
+    if (!ruleName) return null;
+    return iconRules.find((rule) => rule.name === ruleName) || null;
+  }
+
   // 初始化样式和动态关键词的函数
   let allCombinedKeywords = [...archKeywords];
 
@@ -3396,14 +3548,8 @@
           hue = Math.floor(currentHue * 360);
         }
       } else if (arch.toLowerCase() === "aarch64") {
-        // aarch64 使用与 x86_64 相同的颜色
-        if (x86_64Hue !== null) {
-          hue = x86_64Hue;
-        } else {
-          currentHue += goldenRatioConjugate;
-          currentHue %= 1;
-          hue = Math.floor(currentHue * 360);
-        }
+        // aarch64 与 arm64 同为 ARM 系，共用同一颜色（桔红色）
+        hue = 15;
       } else if (arch.toLowerCase() === "x64") {
         // x64 使用与 x86_64 相同的颜色
         if (x86_64Hue !== null) {
@@ -3495,7 +3641,8 @@
     ].sort((a, b) => b.length - a.length); // 确保长词优先匹配
   };
 
-  // 初始化样式
+  // 初始化样式（并同步主题色缓存，供高亮函数使用）
+  refreshThemeColorsCache();
   window.initializeArchStyles();
 
   // 高亮架构关键词（包含自定义关键词）
@@ -3518,8 +3665,8 @@
 
     result = result.replace(regex, (match) => {
       const lowerMatch = match.toLowerCase();
-      const userKeywords = GM_getValue("userCustomKeywords", []);
-      const defaultColorOverrides = GM_getValue("defaultColorOverrides", {});
+      const userKeywords = cachedThemeColors.userCustomKeywords;
+      const defaultColorOverrides = cachedThemeColors.defaultColorOverrides;
       const isCustomKwd =
         userKeywords.some((kw) => kw.text.toLowerCase() === lowerMatch) ||
         Object.prototype.hasOwnProperty.call(
@@ -3648,11 +3795,17 @@
             }
           }
 
+          // 兑底：识别算法 v2（OS 别名归一 + 复合词拆分 + 置信度）
+          if (!matchedRule) {
+            matchedRule = findIconRuleV2(fileNameLower);
+          }
+
           if (matchedRule) {
             const tempDiv = document.createElement("div");
             tempDiv.innerHTML = matchedRule.svg;
             const newSvg = tempDiv.firstChild;
             newSvg.classList.add("custom-svg-icon");
+            newSvg.setAttribute("data-mgga-mutation-guard", "1");
 
             const activeSvg = svgContainer.querySelector("svg");
             if (activeSvg && activeSvg.parentNode) {
@@ -3679,6 +3832,7 @@
           const fileNameContainer = document.createElement("span");
           // 加入 text-bold 保持 GitHub 新版原生加粗样式
           fileNameContainer.className = "file-name-container text-bold";
+          fileNameContainer.setAttribute("data-mgga-mutation-guard", "1");
           fileNameContainer.innerHTML = highlightArchKeywords(originalFileName);
           link.innerHTML = "";
           link.appendChild(fileNameContainer);
@@ -3714,6 +3868,28 @@
 
       for (const mutation of mutations) {
         if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
+          // 忽略本脚本自身产生的变更（样式标签 / 高亮 span 容器）
+          const t = mutation.target;
+          if (
+            t &&
+            t.nodeType === 1 &&
+            t.closest &&
+            t.closest("[data-mgga-mutation-guard]")
+          ) {
+            continue;
+          }
+          let isSelf = false;
+          for (const node of mutation.addedNodes) {
+            if (
+              node.nodeType === 1 &&
+              node.closest &&
+              node.closest("[data-mgga-mutation-guard]")
+            ) {
+              isSelf = true;
+              break;
+            }
+          }
+          if (isSelf) continue;
           needsUpdate = true;
           break;
         }
@@ -3724,7 +3900,12 @@
       }
     });
 
-    assetsObserver.observe(document.body, {
+    // 缩小监听范围：Release 资产所在主内容区，找不到时才兑底到 body
+    const assetListRoot =
+      document.querySelector("main") ||
+      document.querySelector(".Box.Box--condensed") ||
+      document.body;
+    assetsObserver.observe(assetListRoot, {
       childList: true,
       subtree: true,
     });
@@ -3843,11 +4024,871 @@
     }
   });
 
+  // === 仓库头操作按钮行溢出修正 ===
+  // 真因（实机）：新版仓库头 narrow 布局里，Watch/Fork/Star/Sponsor 等按钮所在的
+  // flex 行未按屏幕宽度换行/收缩，最后一个 Sponsor 按钮顶出主列，把文档撑宽，
+  // 右侧因此出现一整列空白。
+  // 对策：只改这一行按钮的布局行为（强制 wrap + 允许收缩 + 容器限宽），默认开启。
+  const HEADER_BTN_FIX_STYLE_ID = "mgga-header-btn-fix-style";
+  let headerBtnObserver = null;
+  let headerBtnDebounce = null;
+  let headerBtnBootstrapTimer = null;
+
+  function isMobileLayoutFixEnabled() {
+    return GM_getValue("mobileLayoutFix", true);
+  }
+
+  function injectHeaderBtnFixStyle() {
+    const existing = document.getElementById(HEADER_BTN_FIX_STYLE_ID);
+    if (!isMobileLayoutFixEnabled()) {
+      if (existing) existing.remove();
+      document.documentElement.classList.remove("mgga-header-btn-fix");
+      return;
+    }
+    if (existing) return;
+
+    const style = document.createElement("style");
+    style.id = HEADER_BTN_FIX_STYLE_ID;
+    style.setAttribute("data-mgga-mutation-guard", "1");
+    style.textContent = `
+      /* MGGA: repo header action row — wrap / shrink so Sponsor cannot overflow */
+      html.mgga-header-btn-fix #repos-split-pane-content header,
+      html.mgga-header-btn-fix #repos-split-pane-content header [class*="HeaderContent"],
+      html.mgga-header-btn-fix #repos-split-pane-content header .show-whenNarrow {
+        max-width: 100% !important;
+        min-width: 0 !important;
+      }
+
+      /* 外层 flex 行（含 .tmp-mb-3.flex-wrap）：必须换行，且不超过主列宽度 */
+      html.mgga-header-btn-fix #repos-split-pane-content header .show-whenNarrow .d-flex,
+      html.mgga-header-btn-fix #repos-split-pane-content header .tmp-mb-3,
+      html.mgga-header-btn-fix header .d-flex.gap-2.tmp-mb-3 {
+        flex-wrap: wrap !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+      }
+
+      /* 行内的按钮组 div：自身也允许换行/收缩 */
+      html.mgga-header-btn-fix #repos-split-pane-content header .show-whenNarrow .d-flex > div,
+      html.mgga-header-btn-fix header .d-flex.gap-2.tmp-mb-3 > div {
+        min-width: 0 !important;
+        max-width: 100% !important;
+        flex: 1 1 auto !important;
+        flex-wrap: wrap !important;
+        box-sizing: border-box !important;
+      }
+
+      /* 组内按钮（Watch / Fork / Star / Sponsor…）：允许收缩，不再用 max-content 顶宽 */
+      html.mgga-header-btn-fix #repos-split-pane-content header .show-whenNarrow button,
+      html.mgga-header-btn-fix #repos-split-pane-content header .show-whenNarrow a,
+      html.mgga-header-btn-fix header .d-flex.gap-2.tmp-mb-3 button,
+      html.mgga-header-btn-fix header .d-flex.gap-2.tmp-mb-3 a {
+        min-width: 0 !important;
+        max-width: 100% !important;
+        flex-shrink: 1 !important;
+        flex-grow: 0 !important;
+        box-sizing: border-box !important;
+      }
+    `;
+    document.documentElement.classList.add("mgga-header-btn-fix");
+    document.head.appendChild(style);
+  }
+
+  // 对目标按钮行打标并强制 wrap（兼容 GitHub 换 class 后仍命中结构）
+  function applyHeaderBtnRowLayout() {
+    if (!isMobileLayoutFixEnabled()) return;
+    const selectors = [
+      "#repos-split-pane-content header .show-whenNarrow .d-flex",
+      "#repos-split-pane-content header .tmp-mb-3",
+      "header .d-flex.gap-2.tmp-mb-3",
+    ];
+    const rows = document.querySelectorAll(selectors.join(","));
+    let appliedCount = 0;
+    rows.forEach((row) => {
+      if (!(row instanceof HTMLElement)) return;
+      // 幂等短路：已打过标且样式未丢失时跳过，避免与自身 observer 形成循环
+      if (
+        row.dataset.mggaHeaderBtnRow === "1" &&
+        row.style.flexWrap === "wrap"
+      ) {
+        appliedCount++;
+        return;
+      }
+      appliedCount++;
+      row.dataset.mggaHeaderBtnRow = "1";
+      row.style.flexWrap = "wrap";
+      row.style.maxWidth = "100%";
+      row.style.minWidth = "0";
+      row.style.width = "100%";
+      row.style.boxSizing = "border-box";
+      Array.from(row.children).forEach((group) => {
+        if (!(group instanceof HTMLElement)) return;
+        group.style.flexWrap = "wrap";
+        group.style.maxWidth = "100%";
+        group.style.minWidth = "0";
+        group.style.flex = "1 1 auto";
+        group.style.boxSizing = "border-box";
+        group.querySelectorAll("button, a").forEach((btn) => {
+          if (!(btn instanceof HTMLElement)) return;
+          btn.style.minWidth = "0";
+          btn.style.maxWidth = "100%";
+          btn.style.flexShrink = "1";
+        });
+      });
+    });
+    return appliedCount;
+  }
+
+  function scheduleHeaderBtnFix() {
+    if (!isMobileLayoutFixEnabled()) return;
+    if (headerBtnDebounce) clearTimeout(headerBtnDebounce);
+    headerBtnDebounce = setTimeout(() => {
+      headerBtnDebounce = null;
+      applyHeaderBtnRowLayout();
+    }, 80);
+  }
+
+  // 目标按钮行尚未出现在 DOM 时的兑底轮询（最多 20 次 × 250ms，成功即停止）
+  function startHeaderBtnBootstrap() {
+    let attempts = 0;
+    const tryApply = () => {
+      if (!isMobileLayoutFixEnabled()) return;
+      const applied = applyHeaderBtnRowLayout();
+      if (applied > 0) {
+        setupHeaderBtnObserver();
+        return;
+      }
+      if (++attempts >= 20) return;
+      headerBtnBootstrapTimer = setTimeout(tryApply, 250);
+    };
+    tryApply();
+  }
+
+  function teardownHeaderBtnObserver() {
+    if (headerBtnObserver) {
+      headerBtnObserver.disconnect();
+      headerBtnObserver = null;
+    }
+    if (headerBtnBootstrapTimer) {
+      clearTimeout(headerBtnBootstrapTimer);
+      headerBtnBootstrapTimer = null;
+    }
+  }
+
+  function setupHeaderBtnObserver() {
+    teardownHeaderBtnObserver();
+    if (!isMobileLayoutFixEnabled()) return;
+    if (!document.body) return;
+    // 缩小监听范围：仅观察仓库页头部区域，避免全页 subtree 监听的持续开销
+    const watchRoot =
+      document.querySelector("#repos-split-pane-content header") ||
+      document.querySelector("header.AppHeader") ||
+      document.querySelector("header") ||
+      document.body; // 头部未渲染时的兑底（每次 SPA 导航重置）
+    headerBtnObserver = new MutationObserver((mutations) => {
+      // 忽略本脚本自身产生的变更（如样式标签插入）
+      for (const mutation of mutations) {
+        const t = mutation.target;
+        if (
+          t &&
+          t.nodeType === 1 &&
+          t.closest &&
+          t.closest("[data-mgga-mutation-guard]")
+        ) {
+          continue;
+        }
+        scheduleHeaderBtnFix();
+        return;
+      }
+    });
+    headerBtnObserver.observe(watchRoot, { childList: true, subtree: true });
+  }
+
+  function applyMobileLayoutFix() {
+    injectHeaderBtnFixStyle();
+    if (!isMobileLayoutFixEnabled()) {
+      teardownHeaderBtnObserver();
+      return;
+    }
+    applyHeaderBtnRowLayout();
+    startHeaderBtnBootstrap();
+  }
+
+  // 对全站仓库页生效（不限于 Release），初始与视口变化时校正
+  if (document.body) {
+    applyMobileLayoutFix();
+  } else {
+    document.addEventListener("DOMContentLoaded", () => applyMobileLayoutFix(), { once: true });
+  }
+  window.addEventListener("resize", scheduleHeaderBtnFix);
+  window.addEventListener("orientationchange", scheduleHeaderBtnFix);
+  window.addEventListener("resize", scheduleNavMoreFlatten);
+  window.addEventListener("orientationchange", scheduleNavMoreFlatten);
+
+  // === 全局导航：More 钉在首行末端，切换首行以下项的展开/折叠 ===
+  // 策略：
+  // 1) 把 More 下拉项与既有导航项合并成有序列表，放进 nav 容器。
+  // 2) flex-wrap 自动换行；其余项在 DOM 顺序上“绕过” More（首行项 → More → 其余项）。
+  // 3) More 始终占首行末端；点击展开/折叠首行以下的行。
+  const NAV_MORE_STYLE_ID = "mgga-nav-more-flatten-style";
+  const NAV_MORE_ITEM_ATTR = "data-mgga-nav-more-item";
+  const NAV_MORE_FLOW_ATTR = "data-mgga-nav-flow";
+  const NAV_MORE_TOGGLE_ATTR = "data-mgga-nav-more-toggle";
+  const NAV_MORE_OVERFLOW_ATTR = "data-mgga-nav-overflow";
+  const NAV_MORE_HOST_ATTR = "data-mgga-nav-host";
+  let navMoreObserver = null;
+  let navMoreDebounce = null;
+  let navMoreHarvesting = false;
+  let navMoreExpanded = false;
+  let navMoreToggleBound = false;
+
+  function isNavMoreFlattenEnabled() {
+    return GM_getValue("navMoreFlatten", true);
+  }
+
+  function injectNavMoreFlattenStyle() {
+    const existing = document.getElementById(NAV_MORE_STYLE_ID);
+    if (!isNavMoreFlattenEnabled()) {
+      if (existing) existing.remove();
+      document.documentElement.classList.remove("mgga-nav-more-flatten");
+      return;
+    }
+    if (existing) return;
+
+    const style = document.createElement("style");
+    style.id = NAV_MORE_STYLE_ID;
+    style.setAttribute("data-mgga-mutation-guard", "1");
+    style.textContent = `
+      /* MGGA: More pinned to first row end; overflow rows expand/collapse */
+      html.mgga-nav-more-flatten {
+        --AppHeader-height: auto !important;
+      }
+
+      html.mgga-nav-more-flatten .js-header-wrapper,
+      html.mgga-nav-more-flatten .header-wrapper,
+      html.mgga-nav-more-flatten header.AppHeader,
+      html.mgga-nav-more-flatten .AppHeader,
+      html.mgga-nav-more-flatten .AppHeader-globalBar,
+      html.mgga-nav-more-flatten header nav {
+        height: auto !important;
+        max-height: none !important;
+        min-height: 0 !important;
+      }
+
+      html.mgga-nav-more-flatten [${NAV_MORE_HOST_ATTR}],
+      html.mgga-nav-more-flatten header nav,
+      html.mgga-nav-more-flatten header nav > div,
+      html.mgga-nav-more-flatten header nav > ul,
+      html.mgga-nav-more-flatten .AppHeader-nav,
+      html.mgga-nav-more-flatten .AppHeader-list {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+        align-content: flex-start !important;
+        row-gap: 4px !important;
+        column-gap: 2px !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        overflow: visible !important;
+      }
+
+      html.mgga-nav-more-flatten [${NAV_MORE_FLOW_ATTR}],
+      html.mgga-nav-more-flatten [${NAV_MORE_ITEM_ATTR}] {
+        display: inline-flex !important;
+        align-items: center !important;
+        flex: 0 0 auto !important;
+        white-space: nowrap !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+      }
+
+      html.mgga-nav-more-flatten [${NAV_MORE_ITEM_ATTR}] {
+        color: var(--fgColor-default, var(--color-fg-default, inherit)) !important;
+        text-decoration: none !important;
+        border-radius: 6px !important;
+        padding: 4px 8px !important;
+        font-size: 14px !important;
+        line-height: 21px !important;
+        opacity: 0.92;
+      }
+
+      html.mgga-nav-more-flatten [${NAV_MORE_ITEM_ATTR}]:hover {
+        background: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(127,127,127,0.15))) !important;
+        opacity: 1;
+      }
+
+      html.mgga-nav-more-flatten [${NAV_MORE_ITEM_ATTR}] svg {
+        width: 1em !important;
+        height: 1em !important;
+        margin-right: 0.35em !important;
+        flex-shrink: 0 !important;
+      }
+
+      /* More：始终可见、钉在首行末端语义位置 */
+      html.mgga-nav-more-flatten [${NAV_MORE_TOGGLE_ATTR}] {
+        display: inline-flex !important;
+        align-items: center !important;
+        flex: 0 0 auto !important;
+        white-space: nowrap !important;
+        box-sizing: border-box !important;
+        z-index: 2;
+      }
+
+      /* 首行以下的项：折叠时隐藏，展开时显示并换行 */
+      html.mgga-nav-more-flatten [${NAV_MORE_OVERFLOW_ATTR}="1"][data-mgga-nav-collapsed="1"] {
+        display: none !important;
+      }
+
+      html.mgga-nav-more-flatten [${NAV_MORE_OVERFLOW_ATTR}="1"] {
+        display: inline-flex !important;
+      }
+
+      /* 原 More 下拉面板不再弹出 */
+      html.mgga-nav-more-flatten [data-mgga-nav-more-dropdown] {
+        display: none !important;
+      }
+    `;
+    document.documentElement.classList.add("mgga-nav-more-flatten");
+    document.head.appendChild(style);
+  }
+
+  function findHeaderNav() {
+    const selectors = [
+      ".js-header-wrapper header nav",
+      ".header-wrapper header nav",
+      "header.AppHeader nav",
+      ".AppHeader nav",
+      ".header-wrapper nav",
+      "header nav",
+    ];
+    for (const sel of selectors) {
+      const nav = document.querySelector(sel);
+      if (nav) return nav;
+    }
+    return null;
+  }
+
+  function normalizedText(el) {
+    return (el && el.textContent ? el.textContent : "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function isMoreLabel(text) {
+    if (!text) return false;
+    return /^(more|更多|더보기|もっと見る|mehr|plus|⋯|\.\.\.)$/i.test(text.trim());
+  }
+
+  function findMoreTrigger(nav) {
+    if (!nav) return null;
+    // 已接管的 toggle 优先
+    const bound = nav.querySelector(`[${NAV_MORE_TOGGLE_ATTR}]`);
+    if (bound) return bound;
+
+    const candidates = nav.querySelectorAll("button, a, summary, [role=button]");
+    for (const el of candidates) {
+      if (!(el instanceof HTMLElement)) continue;
+      if (el.hasAttribute(NAV_MORE_ITEM_ATTR)) continue;
+      if (el.hasAttribute(NAV_MORE_FLOW_ATTR) && el.getAttribute(NAV_MORE_FLOW_ATTR) === "1" && el.tagName === "A") continue;
+      const label =
+        el.getAttribute("aria-label") ||
+        el.getAttribute("data-more") ||
+        normalizedText(el);
+      if (isMoreLabel(label)) return el;
+      if (
+        el.getAttribute("aria-haspopup") === "true" &&
+        el.getAttribute("aria-expanded") !== null &&
+        isMoreLabel(normalizedText(el.closest("li,div")))
+      ) {
+        return el;
+      }
+    }
+    const details = nav.querySelector("details");
+    if (details) {
+      const summary = details.querySelector("summary");
+      if (summary && isMoreLabel(normalizedText(summary))) return summary;
+    }
+    return null;
+  }
+
+  function findMoreMenu(trigger) {
+    if (!trigger) return null;
+    if (trigger instanceof HTMLDetailsElement) return trigger;
+    if (trigger.tagName === "SUMMARY" && trigger.parentElement) {
+      return trigger.parentElement;
+    }
+
+    const controls = trigger.getAttribute("aria-controls");
+    if (controls) {
+      const byId = document.getElementById(controls);
+      if (byId) return byId;
+    }
+
+    const wrapper = trigger.closest(
+      "li, [class*='ActionMenu'], [class*='action-menu'], details, div"
+    );
+    if (wrapper) {
+      const menus = wrapper.querySelectorAll(
+        "[class*='ActionList'], [class*='SelectMenu'], [class*='dropdown-menu'], [role='menu'], ul, [hidden]"
+      );
+      if (menus.length) return menus[menus.length - 1];
+      if (wrapper !== trigger && wrapper.querySelectorAll("a[href]").length) {
+        return wrapper;
+      }
+    }
+
+    const openMenus = document.querySelectorAll(
+      "[data-target~='action-menu.overlay'], .ActionMenu-Overlay, [role='menu']"
+    );
+    if (openMenus.length) return openMenus[openMenus.length - 1];
+    return null;
+  }
+
+  function extractMenuItems(menuRoot) {
+    if (!menuRoot) return [];
+    const items = [];
+    const seen = new Set();
+    const anchors = menuRoot.querySelectorAll("a[href]");
+    anchors.forEach((a) => {
+      if (!(a instanceof HTMLAnchorElement)) return;
+      if (a.hasAttribute(NAV_MORE_ITEM_ATTR)) return;
+      const href = a.getAttribute("href");
+      if (!href || href === "#" || href.startsWith("javascript:")) return;
+      const label = a.getAttribute("aria-label") || normalizedText(a);
+      if (!label) return;
+      if (isMoreLabel(label)) return;
+      const key = href + "|" + label;
+      if (seen.has(key)) return;
+      seen.add(key);
+      items.push({ href, label, source: a });
+    });
+    return items;
+  }
+
+  function waitFor(predicate, timeoutMs) {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const tick = () => {
+        let value = null;
+        try {
+          value = predicate();
+        } catch (_) {
+          value = null;
+        }
+        if (value) return resolve(value);
+        if (Date.now() - start >= timeoutMs) return resolve(null);
+        setTimeout(tick, 50);
+      };
+      tick();
+    });
+  }
+
+  async function harvestMoreItems(trigger) {
+    let menu = findMoreMenu(trigger);
+    let items = extractMenuItems(menu);
+    if (items.length) return items;
+
+    const originallyOpen =
+      trigger.getAttribute("aria-expanded") === "true" ||
+      (trigger instanceof HTMLDetailsElement && trigger.open) ||
+      (trigger.tagName === "SUMMARY" &&
+        trigger.parentElement &&
+        trigger.parentElement instanceof HTMLDetailsElement &&
+        trigger.parentElement.open);
+
+    if (!originallyOpen) {
+      try {
+        trigger.click();
+      } catch (_) {
+        /* ignore */
+      }
+      menu = await waitFor(() => findMoreMenu(trigger), 1000);
+      items = extractMenuItems(menu);
+      try {
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true })
+        );
+      } catch (_) {
+        /* ignore */
+      }
+      if (
+        trigger.getAttribute("aria-expanded") === "true" ||
+        (trigger instanceof HTMLDetailsElement && trigger.open)
+      ) {
+        try {
+          trigger.click();
+        } catch (_) {
+          /* ignore */
+        }
+      }
+    } else {
+      items = extractMenuItems(menu);
+    }
+    return items;
+  }
+
+  function pickNavHost(nav, trigger) {
+    if (trigger) {
+      const host = trigger.closest("ul, [class*='list'], div");
+      if (host && nav.contains(host) && host !== nav) return host;
+    }
+    const direct = nav.querySelector(":scope > ul, :scope > div");
+    return direct || nav;
+  }
+
+  function clearFlattenedItems() {
+    document
+      .querySelectorAll(`[${NAV_MORE_ITEM_ATTR}]`)
+      .forEach((el) => el.remove());
+    document
+      .querySelectorAll(`[${NAV_MORE_FLOW_ATTR}]`)
+      .forEach((el) => {
+        el.removeAttribute(NAV_MORE_FLOW_ATTR);
+        el.removeAttribute(NAV_MORE_OVERFLOW_ATTR);
+        el.removeAttribute("data-mgga-nav-collapsed");
+        el.removeAttribute("style");
+      });
+    document
+      .querySelectorAll(`[${NAV_MORE_HOST_ATTR}]`)
+      .forEach((el) => el.removeAttribute(NAV_MORE_HOST_ATTR));
+    document.querySelectorAll("[data-mgga-nav-more-dropdown]").forEach((el) => {
+      el.removeAttribute("data-mgga-nav-more-dropdown");
+    });
+    document.querySelectorAll(`[${NAV_MORE_TOGGLE_ATTR}]`).forEach((el) => {
+      el.removeAttribute(NAV_MORE_TOGGLE_ATTR);
+      el.removeAttribute("data-mgga-nav-collapsed");
+    });
+    navMoreExpanded = false;
+    navMoreToggleBound = false;
+  }
+
+  function buildFlattenedAnchor(item) {
+    const a = document.createElement("a");
+    a.href = item.href;
+    a.setAttribute(NAV_MORE_ITEM_ATTR, "1");
+    a.title = item.label;
+    a.setAttribute("aria-label", item.label);
+    const icon = item.source ? item.source.querySelector("svg") : null;
+    if (icon) {
+      a.appendChild(icon.cloneNode(true));
+    }
+    a.appendChild(document.createTextNode(item.label));
+    return a;
+  }
+
+  function hideNativeMoreDropdown(trigger) {
+    const menu = findMoreMenu(trigger);
+    if (menu && menu !== trigger && !(trigger instanceof HTMLDetailsElement)) {
+      menu.setAttribute("data-mgga-nav-more-dropdown", "1");
+      if (menu instanceof HTMLElement) {
+        menu.hidden = true;
+      }
+    }
+  }
+
+  function ensureMoreToggle(trigger) {
+    if (!trigger) return null;
+    trigger.setAttribute(NAV_MORE_TOGGLE_ATTR, "1");
+    // 接管点击：不再打开 GitHub 原生下拉
+    if (!navMoreToggleBound) {
+      trigger.addEventListener(
+        "click",
+        (e) => {
+          if (!isNavMoreFlattenEnabled()) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          navMoreExpanded = !navMoreExpanded;
+          layoutNavMoreRows();
+        },
+        true
+      );
+      navMoreToggleBound = true;
+    }
+    // 若是 <details>/<summary>，阻止原生展开
+    if (trigger.tagName === "SUMMARY" && trigger.parentElement instanceof HTMLDetailsElement) {
+      trigger.parentElement.open = false;
+    }
+    if (trigger instanceof HTMLDetailsElement) {
+      trigger.open = false;
+    }
+    return trigger;
+  }
+
+  function updateMoreToggleUI(trigger) {
+    if (!trigger) return;
+    trigger.setAttribute("aria-expanded", navMoreExpanded ? "true" : "false");
+    trigger.title = navMoreExpanded
+      ? i18n.t("navMoreCollapse")
+      : i18n.t("navMoreExpand");
+    trigger.setAttribute(
+      "aria-label",
+      isMoreLabel(normalizedText(trigger))
+        ? normalizedText(trigger)
+        : trigger.title
+    );
+    trigger.setAttribute("data-mgga-nav-collapsed", navMoreExpanded ? "0" : "1");
+  }
+
+  function collectFlowItems(host) {
+    if (!host) return [];
+    const nodes = host.querySelectorAll("a[href], button, summary, [role=button]");
+    const items = [];
+    nodes.forEach((el) => {
+      if (!(el instanceof HTMLElement)) return;
+      if (el.hasAttribute(NAV_MORE_TOGGLE_ATTR)) return;
+      if (el.closest("[data-mgga-nav-more-dropdown]")) return;
+      // 仅收集导航容器内、可见结构上的链接/按钮
+      const inHost = host.contains(el) || el.parentElement === host;
+      if (!inHost) return;
+      // 跳过明显非导航项
+      if (el.matches("[hidden], [data-mgga-nav-more-source]")) return;
+      if (el.getAttribute("aria-haspopup") === "true" && el.querySelector("img[alt]")) return;
+      items.push(el);
+    });
+    // 去重、保持 DOM 顺序
+    const seen = new Set();
+    return items.filter((el) => {
+      if (seen.has(el)) return false;
+      seen.add(el);
+      return true;
+    });
+  }
+
+  function measureWidth(el) {
+    if (!(el instanceof HTMLElement)) return 0;
+    const rect = el.getBoundingClientRect();
+    if (rect.width > 0) return rect.width;
+    // display:none 时用临时显示测宽
+    const prev = el.style.display;
+    el.style.display = "inline-flex";
+    const w = el.getBoundingClientRect().width;
+    el.style.display = prev;
+    return w || 0;
+  }
+
+  /**
+   * 布局：
+   * - 其余导航项按 DOM 顺序依次排列、自动换行
+   * - More 固定在首行末端：首行只能放下“若干项 + More”
+   * - 首行以下的项标为 overflow；折叠时隐藏，展开时显示
+   */
+  function layoutNavMoreRows() {
+    const nav = findHeaderNav();
+    if (!nav || !isNavMoreFlattenEnabled()) return;
+    const trigger = findMoreTrigger(nav) || nav.querySelector(`[${NAV_MORE_TOGGLE_ATTR}]`);
+    if (!trigger) return;
+
+    const host =
+      trigger.closest(`[${NAV_MORE_HOST_ATTR}]`) ||
+      pickNavHost(nav, trigger);
+    if (!host) return;
+    host.setAttribute(NAV_MORE_HOST_ATTR, "1");
+
+    const items = collectFlowItems(host);
+    const hostWidth = host.clientWidth || host.getBoundingClientRect().width;
+    if (!hostWidth || !items.length) {
+      updateMoreToggleUI(trigger);
+      return;
+    }
+
+    // 布局签名：项数 + 容器宽度 + 展开状态；未变化时跳过重排，避免与自身
+    // observer 形成"变更 → 重排 → 变更"循环并减少反复测宽/重排开销
+    const signature = `${items.length}|${Math.round(hostWidth)}|${navMoreExpanded ? 1 : 0}`;
+    if (host.dataset.mggaNavLayoutSig === signature) {
+      updateMoreToggleUI(trigger);
+      return;
+    }
+    host.dataset.mggaNavLayoutSig = signature;
+
+    const hostStyle = getComputedStyle(host);
+    const colGap = parseFloat(hostStyle.columnGap) || 4;
+    const moreW = measureWidth(trigger) + colGap;
+
+    // 先全部标成可测宽（折叠态下 overflow 可能是 none）
+    const prevCollapsed = navMoreExpanded;
+    items.forEach((el) => {
+      if (el.getAttribute(NAV_MORE_OVERFLOW_ATTR) === "1") {
+        el.setAttribute("data-mgga-nav-collapsed", "0");
+      }
+    });
+
+    // 贪心装入首行：为 More 预留末位
+    let used = moreW;
+    const firstRow = [];
+    const rest = [];
+    for (const el of items) {
+      const w = measureWidth(el) + colGap;
+      if (firstRow.length === 0 || used + w <= hostWidth + 0.5) {
+        firstRow.push(el);
+        used += w;
+      } else {
+        rest.push(el);
+      }
+    }
+
+    // 重排 DOM：首行项 → More → 其余项（其余项“绕过” More）
+    const frag = document.createDocumentFragment();
+    firstRow.forEach((el) => {
+      el.removeAttribute(NAV_MORE_OVERFLOW_ATTR);
+      el.removeAttribute("data-mgga-nav-collapsed");
+      frag.appendChild(el);
+    });
+    frag.appendChild(trigger);
+    rest.forEach((el) => {
+      el.setAttribute(NAV_MORE_OVERFLOW_ATTR, "1");
+      frag.appendChild(el);
+    });
+    host.appendChild(frag);
+
+    // 应用折叠/展开
+    rest.forEach((el) => {
+      el.setAttribute("data-mgga-nav-collapsed", navMoreExpanded ? "0" : "1");
+    });
+    updateMoreToggleUI(trigger);
+
+    // 容器允许增高
+    host.style.flexWrap = "wrap";
+    host.style.display = "flex";
+    host.style.maxWidth = "100%";
+    nav.style.flexWrap = "wrap";
+    nav.style.height = "auto";
+
+    // 若无 overflow，More 仍钉在末端，点击无害
+    if (!rest.length) {
+      trigger.setAttribute("aria-expanded", "false");
+    }
+    void prevCollapsed;
+  }
+
+  async function applyNavMoreFlatten() {
+    injectNavMoreFlattenStyle();
+    if (!isNavMoreFlattenEnabled()) {
+      clearFlattenedItems();
+      if (navMoreObserver) {
+        navMoreObserver.disconnect();
+        navMoreObserver = null;
+      }
+      return;
+    }
+
+    if (navMoreHarvesting) return;
+    const nav = findHeaderNav();
+    if (!nav) return;
+    let trigger = findMoreTrigger(nav);
+    if (!trigger) {
+      setupNavMoreObserver();
+      return;
+    }
+
+    navMoreHarvesting = true;
+    try {
+      // 收割 More 下拉项（若尚未展开到导航）
+      let harvested = extractMenuItems(findMoreMenu(trigger));
+      if (!harvested.length) {
+        harvested = await harvestMoreItems(trigger);
+      }
+
+      const host = pickNavHost(nav, trigger);
+      if (!host) {
+        setupNavMoreObserver();
+        return;
+      }
+      host.setAttribute(NAV_MORE_HOST_ATTR, "1");
+
+      // 去重：已存在的 href 不再重复插入
+      const existingHrefs = new Set(
+        Array.from(host.querySelectorAll("a[href]")).map((a) =>
+          a.getAttribute("href")
+        )
+      );
+      const toInsert = harvested.filter((it) => !existingHrefs.has(it.href));
+      if (toInsert.length) {
+        // 插在 More 原位置前；layout 阶段会再按首行/溢出重排
+        const frag = document.createDocumentFragment();
+        toInsert.forEach((item) => frag.appendChild(buildFlattenedAnchor(item)));
+        if (trigger.parentElement === host) {
+          host.insertBefore(frag, trigger);
+        } else {
+          host.appendChild(frag);
+        }
+      }
+
+      // 既有导航链接标记为 flow，便于统一测量换行
+      host.querySelectorAll("a[href]").forEach((a) => {
+        if (a.hasAttribute(NAV_MORE_TOGGLE_ATTR)) return;
+        if (a.closest("[data-mgga-nav-more-dropdown]")) return;
+        a.setAttribute(NAV_MORE_FLOW_ATTR, "1");
+      });
+
+      // 接管 More：成为首行末端开关；隐藏原生下拉
+      trigger = ensureMoreToggle(trigger);
+      hideNativeMoreDropdown(trigger);
+
+      layoutNavMoreRows();
+    } finally {
+      navMoreHarvesting = false;
+      setupNavMoreObserver();
+    }
+  }
+
+  function scheduleNavMoreFlatten() {
+    if (!isNavMoreFlattenEnabled()) return;
+    if (navMoreDebounce) clearTimeout(navMoreDebounce);
+    navMoreDebounce = setTimeout(() => {
+      navMoreDebounce = null;
+      // 已接管且 host 存在时只需重排，避免重复收割
+      const host = document.querySelector(`[${NAV_MORE_HOST_ATTR}]`);
+      if (host && host.querySelector(`[${NAV_MORE_TOGGLE_ATTR}]`)) {
+        layoutNavMoreRows();
+        return;
+      }
+      applyNavMoreFlatten();
+    }, 120);
+  }
+
+  function setupNavMoreObserver() {
+    if (navMoreObserver) {
+      navMoreObserver.disconnect();
+      navMoreObserver = null;
+    }
+    if (!isNavMoreFlattenEnabled()) return;
+    const nav = findHeaderNav();
+    const watchRoot =
+      (nav && nav.closest(".js-header-wrapper, .header-wrapper, header, .AppHeader")) ||
+      nav ||
+      document.body;
+    if (!watchRoot) return;
+    navMoreObserver = new MutationObserver((mutations) => {
+      // 忽略本脚本自身产生的变更（样式注入 / 守卫标记 / 折叠属性切换）
+      for (const mutation of mutations) {
+        const t = mutation.target;
+        if (
+          t &&
+          t.nodeType === 1 &&
+          t.closest &&
+          (t.closest("[data-mgga-mutation-guard]") ||
+            t.hasAttribute("data-mgga-nav-collapsed"))
+        ) {
+          continue;
+        }
+        scheduleNavMoreFlatten();
+        return;
+      }
+    });
+    navMoreObserver.observe(watchRoot, { childList: true, subtree: true });
+  }
+
   // === Turbo/SPA 导航与初始化 ===
   let spaNavTimer = null;
   function handleSpaNavigation() {
     if (spaNavTimer) clearTimeout(spaNavTimer);
     spaNavTimer = setTimeout(() => {
+      // 移动端布局修正：所有仓库页都重新应用（不限 Release）
+      applyMobileLayoutFix();
+      applyNavMoreFlatten();
       if (isReleasesPage()) {
         applyColors();
         processAssets();
@@ -3872,6 +4913,11 @@
   }
 
   // 初始执行
+  if (document.body) {
+    applyNavMoreFlatten();
+  } else {
+    document.addEventListener("DOMContentLoaded", () => applyNavMoreFlatten(), { once: true });
+  }
   if (isReleasesPage()) {
     processAssets();
     setupAssetsObserver();

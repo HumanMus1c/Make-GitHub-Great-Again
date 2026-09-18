@@ -18,6 +18,8 @@ This is a simple and practical browser script that adds custom background colors
 - \[⬤] **Independent Theme Adaptation**: Perfectly adapts to GitHub's dark/light themes. Supports separate color settings for dark and light modes, which are independent of each other.
 - \[⬤] **Powerful Control Panel**: Provides an intuitive settings panel (with auto-adjusting window size). You can customize odd/even row colors and hover colors, and instantly toggle any feature on/off with real-time updates!
 - \[⬤] **Built-in Professional Color Picker**: A custom-developed color picker supporting HEX, RGB, and HSL modes, along with preset colors and real-time page effect previews while dragging.
+- \[⬤] **Fix Repo Header Button Overflow**: On phones, the Watch/Fork/Star/Sponsor row may not wrap or shrink, so Sponsor overflows the main column and leaves a blank strip on the right. The script forces that row to wrap and lets buttons shrink (toggle in the panel).
+- \[⬤] **Nav More Multi-line Toggle**: Merges the global header `More` dropdown items with existing nav links in order. **More stays pinned at the end of the first row** and toggles expansion/collapse of items on rows below; other nav buttons always flow around More and auto-wrap (toggle in the panel).
 - \[◯] **~~Event Interception Optimization~~**~~: Deeply optimized event bubbling mechanism to perfectly resolve conflicts with GitHub's native scripts, ensuring lag-free operation and no console errors.~~
 
 ## 🚀 Installation
