@@ -1,3 +1,327 @@
+v2026.10.16 [2026-09-20]
+目的地归一升级:绝对 URL 合并 + 当前页豁免白名单化
+[
+1. 用户复测(v2026.10.15,行号 5679/5658 铁证):仍重复;日志链路健康
+   (无 MGGA 报错,长堆栈为广告拦截器挡 GitHub analytics 的异步归因)。
+2. 残余漏洞:① More 菜单收割可能拿到绝对 URL,与直扫相对路径归一后
+   不相等 → 目的地去重漏放;② 上一轮"当前页路径豁免"过宽,More 菜单
+   里选中 tab 的别名副本(# + aria-current 落当前页)也借豁免入面板。
+3. 修复:目的地改用 URL 解析归一(同源才合并,跨源/不可解析不合并);
+   当前页豁免收紧为 code/readme 白名单,其余落到当前页的条目同样受
+   目的地去重管辖。
+4. 验证:专项探针注入绝对 URL 别名项被拦下;react 双视口 e2e、iina
+   双视口探针无回归。
+]
+
+v2026.10.15 [2026-09-20]
+目的地去重(别名拦截):同一真实路径只保留首个入口
+[
+1. 用户复测(v2026.10.14 登录态):重复更多 —— 日志新增 Breadcrumbs 栏
+   参与收割且 Repository/files 栏首次点击即成功,三路收割产物同时入
+   面板;且 GitHub 新旧导航对同一 tab 用不同名称("Security" vs
+   "Security and quality"),按标签去重永远拦不住别名形态。
+2. 修复:pushItem 增加目的地去重 —— 归一真实路径相同 → 只保留首个
+   入口;当前页路径(Code/README 两真实 tab 共享)不参与目的地合并,
+   由标签去重管辖。与 10.14 的同名去重构成双保险。
+3. 验证:专项探针升级为同仓库路径+别名 "Security" 注入,PASS;
+   react 双视口 e2e 无回归。
+]
+
+v2026.10.14 [2026-09-20]
+统一标签提取与计数料尾:修复 Issues1.8k vs Issues 键不相等的漏网
+[
+1. 用户复测(v2026.10.13 登录态):Repository 分组下仍重复 Issues;
+   控制台日志行号(5634/5655)确认已是 10.13 代码,去重保险丝仍未命中。
+2. 根因:两条收录路径的标签提取不一致 —— 直扫用 navDockAnchorLabel
+   (剔除计数器节点)得 "Issues",More 菜单收割用 normalizedText(不剔除)
+   得 "Issues1.8k"(GitHub DOM 内无空白字符,空格由 CSS gap 渲染);
+   旧去重正则要求"前导空格+纯数字"尾部,对无空格拼接/带 k 缩写计数
+   均剥不掉 → 规范化键 "issues" vs "issues1.8k" 不相等,同名保险丝
+   失效;克隆渲染后胶囊与文本视觉一致,面板上看到完全相同的两项。
+3. 修复:extractMenuItems 标签提取改用 navDockAnchorLabel(与直扫一致);
+   去重料尾正则升级为兼容 "1834" / "1.8k" / 无空格拼接 / 括号旧式。
+4. 附加发现:旧截图面板标题显示 v2026.10.11(GM_info),但本次控制台
+   日志行号铁证 10.13 —— 截图应为 10.11 时期的旧证据。建议顺手在
+   Tampermonkey 仪表盘确认只装了一份 MGGA(双装会互相覆盖面板)。
+]
+
+v2026.10.13 [2026-09-20]
+同名 tab 先到先得:面板内同名项(去计数后缀)无条件只出现一次
+[
+1. 上一轮目的地等价判定仍依赖 href 形态假设;登录态 React 双标签条若
+   出现未观测过的 href 形态(如带 query/fragment 的落地形态),同名
+   tab 仍可能漏网二次入面板。
+2. 修复:pushItem 去重收敛为单一规则 —— 规范化标签(去计数后缀、
+   小写)相同即视作同一 tab,先到先得,不再依赖 href 形态判定;同名
+   项保证至多入面板一次。
+3. 验证:react 与 iina 双视口 e2e 全部 PASS,同名项零重复;合成平行
+   栏异形 href 注入探针确认同名只收一次。
+]
+
+跨栏目的地等价去重:修复双标签条并存导致的 Issues/PR/Security 重复
+[
+1. 用户复测(附 iina/iina 截图):show-whenNarrow 容器已不再误收,但
+   Issues / Pull requests / Security and quality 三项重复;模拟移动端
+   页面只重复 Issues 一项。
+2. 取证(curl 抓取 iina/iina 服务端 HTML):页面同时存在两份仓库标签条
+   —— 新版 React 条与旧版 js-repo-nav UnderlineNav(aria-label 均为
+   "Repository"),两份的同一 tab 锚点 href 形态不同(React 条落地到
+   当前路径/占位,旧条为真实 /issues 等路径),精确 href|label 去重键
+   无法命中 → 双条同项并存。计数感知键也只在 href 完全相等时命中,
+   跨栏形态差异仍漏。
+3. 修复:pushItem 去重升级为"规范化标签(去计数后缀、小写)+ 目的地
+   等价"跨栏去重 —— 标签等价 且 (归一 href 相等 / 仅差尾斜杠 /
+   最后一段路径相同 / 任一为 "#" 或当前路径的歧义形态)即重复,先到
+   先得(canonical 可见 tab 先索引);歧义 href 先到时仍可被后续真实
+   目的地补记。面板仍显示原始标签。
+4. 验证:真实 GitHub 双视口 e2e PASS(react 仓库移动 13 / 桌面 11,
+   每项恰好一次);登录态头部模拟链路 1 次点击、3 溢出项入面板、
+   scrollY=0;晚切换/振荡探针安静;node --check 通过。
+]
+v2026.10.11 [2026-09-20]
+窄视口专用 chrome(show-whenNarrow)整树排除;计数感知去重
+[
+1. 用户复测:仓库头部内容区(HeaderContent/show-whenNarrow)的条目仍被
+   收割,且 Issues/Pull requests/Security and quality 三个计数项重复。
+2. 根因:该容器是 GitHub 的窄视口专用 chrome(show-whenNarrow 工具类
+   由 CSS 控制显隐),里面渲染的是窄屏版仓库条 —— 计数 tab 快捷片 +
+   "⋯" 元数据 kebab。canonical 导航一直在 DOM 中(直扫不过滤 CSS
+   可见性),v2026.10.10 只排除了"触发器祖先扩展认领",没排除这个
+   容器本身被 findRepoHomeNavBars 索引成栏 → 栏内直扫得到重复 tab,
+   栏内 kebab 收割得到元数据项;计数副本与可见 tab 标签不同,去重
+   未命中。
+3. 修复(双层):
+   a) 结构排除:findRepoHomeNavBars 把位于 show-whenNarrow 子树内的
+      nav 整体排除(带空结果回退:全部被排除时不过滤,防 dock 消失);
+   b) 计数感知去重:pushItem 去重键增加规范化形态(同 href 去尾部
+      斜杠 + 标签去计数后缀),"Issues" 与 "Issues 857" 视作同一
+      导航目标,先到先得(canonical 可见 tab 先索引);精确键并行保留,
+      面板仍显示原始标签。
+4. 验证:真实 GitHub 双视口 e2e PASS(移动 13 项 / 桌面 11 项,
+   计数项各出现一次,无 kebab 条目);登录态头部模拟链路 1 次点击、
+   3 溢出项入面板、scrollY=0;晚切换/振荡/无限重试探针全部安静;
+   node --check 通过。
+]
+v2026.10.10 [2026-09-20]
+排除仓库头部内容区"⋯"元数据菜单的误收割与 Issues 重复项
+[
+1. 用户反馈(附截图):收割成功后,面板多出 Repository 分组下的
+   stars/forks/watching/branches/tags/Activity/Custom properties 等条目,
+   且 Issues 重复出现。
+2. 根因:仓库页头部内容区(PageLayout-HeaderContent / show-whenNarrow)
+   的"⋯"元数据 kebab 也是纯图标弹出按钮,v2026.10.9 的触发器祖先扩展
+   (向上 3 层)把它误认成仓库标签栏的溢出触发器,把统计链接收割成
+   "导航项";其 Issues 链接与标签栏 Issues 因数据属性不同而未被去重。
+3. 修复:触发器祖先扩展跳过头部内容区容器(matches
+   HeaderContent/show-whenNarrow 不认领),位于该容器内的候选一律不
+   作为触发器;仓库标签栏自身的 "More items" 在 nav 内部,不受影响。
+4. 验证:真实 GitHub 双视口 e2e PASS(react 仓库移动 13 项 / 桌面
+   11 项,无 kebab 误收条目);登录态头部模拟链路 1 次点击、3 溢出项
+   入面板、scrollY=0;晚切换与振荡探针安静;node --check 通过。
+]
+v2026.10.9 [2026-09-20]
+纯图标溢出触发器识别(汉堡菜单/无障碍名缺失按钮);导航坞收割结构自诊断日志
+[
+1. 用户复测:登录态头部 More 溢出项在模拟移动端下仍丢失。结构自诊断
+   日志(每栏外显锚点数 + 触发器识别结果)取证发现:全局头部在窄视口
+   下的溢出触发器是**纯图标汉堡按钮("Toggle navigation")**,无 More
+   字样文本,全部旧识别路径(text/aria-label 前缀匹配)都无法命中 ——
+   这正是用户选择器(全局头部 nav)里"More"的真身。
+2. findMoreTrigger 新增纯图标弹出按钮识别:aria-haspopup + aria-expanded
+   齐备且无文本 → 视为溢出触发器;isMoreLabel 语义放宽(toggle
+   navigation / additional navigation 等可访问名);触发器查找向上扩至
+   3 层容器(每层要求首个 nav 是本栏,防误认相邻栏)。
+3. findRepoHomeNavBars 保留外显锚点数 ≤1 的 nav(窄视口下几乎全部项
+   收进 More 的栏此前因"无可见链接"被过滤,收割机会随之丢失)。
+4. 收割循环新增结构自诊断日志([MGGA] scan,定位后可移除):每栏的
+   aria-label/键、外显锚点数、触发器识别结果,一次控制台输出即可定位
+   任意结构差异,终结盲猜式修复。
+5. 验证:登录态头部模拟链路(切窄后注入 + portal 延迟)恰好 1 次点击、
+   3 溢出项入面板;模拟页真实 GitHub 仓库栏的纯图标触发器被正确识别;
+   真实 GitHub 双视口 e2e PASS(移动 13 项 ≥ 桌面 11 项);振荡/无限
+   重试/晚切换探针全部安静;node --check 通过。
+]
+v2026.10.8 [2026-09-20]
+导航坞标题栏显示脚本版本号；登录态头部 More 溢出项丢失根因修复
+[
+1. 导航坞面板标题栏显示脚本版本号（GM_info），样式对齐设置面板的版本
+   角标（小号、弱化色）。
+2. 用户复测:模拟移动端下登录态头部（react-partial）More 溢出项仍丢失。
+   控制台诊断日志逐轮取证,先后定位并修复四个叠加缺陷:
+   a) findMoreMenu 预检 wrapper 假成功（主因）:头部 More 与 tab 列表同属
+      一个容器,wrapper 分支把包含 nav 的整个头部容器当菜单,预检收割到
+      本栏外显项即判定"成功"→ 永不点击 More,溢出项永久丢失。修复:
+      含 nav 的容器一律拒绝作为菜单候选。
+   b) harvestMoreItemsLocked 变量未声明:v2026.10.5 拆分函数时把
+      menu/items 声明留在外层,读取未赋值变量抛 ReferenceError 被上层
+      catch 静默吞掉,整栏收割失败（菜单未在 2.5s 内出现的场景必现）。
+   c) 会话定稿封死收割机会:产物定稿后缓存命中分支不计算待补触发器,
+      切 Responsive 后晚出现的头部 More 永不被点击。修复:missedBars
+      每轮重算,与缓存命中无关 —— 定稿的是收割产物,不是收割机会。
+   d) 收割状态机按栏键记录,React 重渲染重建的触发器会被旧状态封死。
+      改为按触发器元素记录（WeakMap:每元素至多 2 次点击,空结果 2.5s
+      后允许一次重试）,全局 12 次上限兜底。
+3. harvestMoreItems 预跳过 display:none 的 wrap 模式 More 按钮（文件区,
+   永不展开,点击无意义）;菜单查找新增最终通用兜底（触发器之后第一个
+   可见含锚点列表,覆盖非标 portal 结构）;isMoreLabel 放宽语义匹配
+   （additional navigation 等 aria-label 场景）。
+4. 验证矩阵（真实 Chrome）:登录态头部结构模拟（切窄后 1.5s 注入 More +
+   portal 延迟挂载 + primer 焦点行为）→ 恰好点击 1 次、3 溢出项全部
+   入面板、scrollY=0;真实 GitHub 移动宽度收割到此前丢失的头部溢出项
+   （react 仓库 Node/React Native,13 项 vs 桌面 11 项,e2e 断言语义
+   相应更新）;34s 晚现假栏恰好 1 次点击入面板;振荡/无限重试探针安静;
+   node --check 通过。
+]
+v2026.10.7 [2026-09-20]
+晚切换 Responsive(打开 DevTools 后)头部溢出项丢失修复;收割改为每栏一次的状态机
+[
+1. 用户复测:等待打开 DevTools 后再切 Responsive,头部导航仍只剩外显 2 项。
+   根因:上一版收割窗口(20s)从页面加载起算,用户切 Responsive 时窗口早已
+   过期 —— 文件区栏在加载时(桌面宽度)已收割入缓存故正常;头部栏在桌面
+   宽度下无 More 触发器(项全外显),切窄后重排出的头部 More 因窗口关闭
+   永不被点击,溢出项永久丢失。
+2. 收割时序改为每栏一次的状态机(无时间窗):每栏的 More 在页面生命周期内
+   至多点击一次 —— 收割到条目即入缓存(此后面板与收割产物不再变化);
+   点击后为空/异常记入失败名单,本页面内绝不再点击;晚出现的栏(切
+   Responsive 后重排出的头部 More)首次出现时收割一次,无论过了多久。
+   全局点击上限 12 次防御性兜底。保持"每页只收割一次"语义:视口变化
+   重建一律只读缓存。
+3. 解锁回弹:收割结束立即恢复锁定位置,并 1.5s 宽限期内有界回弹 ——
+   覆盖在途平滑滚动动画(焦点还原触发),否则页面会残留在触发器位置。
+4. 验证矩阵(真实 Chrome):晚切换时序(桌面加载等 25s → 切 Responsive)
+   面板 11 项不缩水、总点击 1 次、无滚动;晚现假 More 栏(34s 注入、
+   页首下方 1500px)恰好点击 1 次、2 溢出项入面板、全程 scrollY=0、
+   之后无点击;全新加载双视口 11/11 项 PASS;振荡与无限重试探针安静;
+   node --check 通过。
+]
+v2026.10.6 [2026-09-19]
+收割节奏改为一次性会话；修复桌面切 Responsive 后头部溢出项丢失
+[
+1. 用户报告:DevTools 选 Responsive 缩窄视口(桌面 UA、不刷新)后,头部导航
+   面板只剩外显 2 项,文件区 More 隐藏项反而正常。取证:重排流(桌面宽度
+   加载后再缩窄)里 GitHub 对导航的处理与小视口全新加载不同,头部 More
+   菜单注水/重渲染时机晚得多,上一版每栏 3 次预算在菜单就绪前耗尽即
+   永久放弃该栏。
+2. 一次性收割会话(用户建议落地):每次进入仓库页/刷新/SPA 跨路径开启
+   新会话(loadRun 序号 + 路径),窗口期(20s)内每栏至多点击 More 2 次
+   (初次 + 空结果补收一次);窗口过后与视口变化重建时一律只读缓存,
+   绝不再点击。删除逐次预算簿记与无限补收机制。
+3. 视口变化(桌面拖 Responsive、缩放)沿用同一会话:面板与收割产物
+   完全不变,从根上杜绝重排流里的反复点击;若 GitHub 重排重建了某导航
+   节点,仅对该新节点做一次有界收割(守卫:窗口内 + 每栏余量)。
+4. 空收割不定稿:注水未完成的首轮空结果不再锁死会话,后续轮次可重扫,
+   避免"空缓存 → 悬浮球消失";待补栏每轮重算,双守卫保证不超额点击。
+5. 收割点击期间滚动锁定(snap-back)保留:锁定期间 scrollY 瞬时回弹,
+   焦点还原滚不动页面。
+6. 验证矩阵(真实 Chrome):桌面 1280 加载 11 项(1 次点击)→ 切
+   Responsive 400 不刷新,面板保持 11 项、追加点击有界(4 次事件后
+   安静)、scrollY ≤4px 无振荡;移动 400px + 桌面 1280px 全新加载
+   双视口 11/11 项 PASS;振荡复现脚本静止;失败栏点击不再无限;
+   node --check 通过。
+]
+v2026.10.5 [2026-09-19]
+模拟移动端视口下页面在顶部与 README 区之间来回滚动(振荡)修复
+[
+1. 真机取证:模拟移动端视口进入仓库主页约半分钟后,页面开始在顶部与
+   README 区之间平滑往复滚动(周期约 6.8s)。滚动源头不是脚本主动滚动,
+   而是导航坞收割 More 菜单的副作用链:点击收割期间 primer-react 在
+   Escape 关菜单后把焦点还原给触发器,浏览器平滑滚动使屏幕外的触发器
+   可见;而"收割不到条目的栏"被无限重试(实测 ~2.6s/轮),两个失败栏
+   (页首头部 More、README 区文件区 More)交替点击即形成振荡。
+2. 收割窗口滚动锁定(snap-back):点击收割期间锁定 html/body overflow,
+   并在 scroll 捕获阶段把 scrollY 瞬时拉回锁定位置 —— 程序化滚动
+   (焦点还原)依规范可滚动 overflow:hidden 容器,必须双保险;
+   引用计数支持嵌套,收割结束(含异常)立即恢复。
+3. 每栏收割预算:同一栏点击 More 最多 3 次(主收割与补收共用预算),
+   耗尽即静默放弃,失败栏不再无限重试;成功收割清零预算;缺触发器
+   (注水未完成)的栏不点击、不耗预算,注水等待语义不变。
+4. 签名短路前移:收割结果与现有面板一致且无待补栏时直接返回,
+   任何 body 变更不再触发全量重扫与重复点击。
+5. 面板结构版本 v10,升级后旧面板强制重建一次。
+6. 验证矩阵(真实 Chrome 端到端):振荡复现脚本确认循环消失(锁定期间
+   scroll 恒定、无第二周期);双视口 11/11 项收割完整无回归;失败栏
+   点击 18 次 → 4 次后永久安静;node --check 通过。
+]
+v2026.10.4 [2026-09-19]
+移动端模拟视口下头部导航 More 溢出项收割失效修复
+[
+1. 真机取证:DevTools 设备工具栏模拟手机（窄视口）进入仓库主页时，悬浮导航
+   面板只剩 5 项，且缺失的正是头部导航 More 下拉里的溢出项；文件区导航的
+   More 收割正常。未登录基线（同视口）面板 11 项完整，问题指向登录态头部
+   导航（react-partial 渲染）的收割链路。
+2. 预检假成功根因修复（findMoreMenu）：More 按钮与 tab 列表同处一个容器时，
+   wrapper 分支会把本栏导航列表本身/内部节点（tab ul、溢出隐藏 li）当菜单
+   返回，收割出与可见项重复/残缺的条目即被当作"成功"，此后不再点击 More，
+   溢出项永久丢失。预检阶段现在一律拒绝本栏 nav 内部的候选菜单；真实菜单
+   由点击后的全局兜底（仅收可见 portal）或 aria-controls / details 所有权
+   路径提供。
+3. 触发器查找加固（findMoreTrigger）：新版登录态头部可能把 More 触发器渲染
+   为 nav 的兄弟节点（同属一个 header 容器），旧逻辑只在 nav 内部查找导致
+   永远找不到触发器。现在向上扩大一层容器查找，并限定外层首个 nav 必须是
+   本栏，避免误认相邻栏的 More。
+4. 收割产物保真（extractMenuItems）：More 菜单内 href="#" 的 React 客户端
+   路由溢出 tab 不再在收割层被丢弃，放行给 pushItem 的白名单/选中态判定
+   （与文件区直扫同规则），溢出的 License/Contributing 类 tab 可正确落地。
+5. 验证矩阵（真实 Chrome 端到端，移动 400px + 桌面 1280px 双视口）：react
+   11/11 项（含 4 个社区文件 tab）、DeepLX 8 项（License ✓）、MGGA 9 项无
+   假条目，双视口条目完全一致；jsdom 仿真 8/8；语法检查通过。
+6. 面板结构版本 v9，升级后旧面板强制重建一次。
+]
+v2026.10.3 [2026-09-19]
+文件区社区文件 tab（License/Contributing 等）在面板中缺失的根因修复
+[
+1. 真机复现与根因：新版 GitHub 文件区 nav 采用 data-overflow-mode=wrap（More 按钮
+   常驻 display:none，永不展开），License/Contributing/Code of conduct/Security 以
+   href="#" 的 React 客户端路由 tab 直接渲染在 nav 内；旧逻辑把它们当作无导航意义的
+   占位锚点过滤，因此从未进入面板 —— 此前两轮的 More 菜单 portal 修复方向虽对，
+   但该项根本不走收割流程。
+2. 新增 resolveFileAreaTabHref：对白名单 tab（License/licence/Contributing/Code of
+   conduct/Security/Citation/README，含 "MIT license" 等许可证类型前缀文案）按证据链
+   解析真实落地路径 —— ① 页面已有 blob/tree 锚点（文件列表/侧栏）；② 内嵌 React
+   flight 数据的 tabName+path+refName；③ 社区文件约定名 + blob/HEAD 兜底。
+3. collectRepoHomeNavItems 放行上述占位 tab：isBreadcrumbish/pushItem 不再误杀，
+   窄视口下 GitHub 隐藏的社区文件 li 也在面板保留（换行模式下页面上无任何入口，
+   面板补充导航正是其价值）；带按 label 的解析缓存。
+4. 回归矩阵（真实 Chrome 端到端）：react 桌面+移动 5/5（Code of conduct/Contributing/
+   MIT license/Security/README，路径全部可达）、DeepLX License、MGGA 无假条目；
+   语法检查通过。
+5. 面板结构版本 v8，升级后旧面板强制重建一次。
+]
+v2026.10.2 [2026-09-19]
+文件区 More 菜单收割落地与面板文本左对齐修复
+[
+1. 文件区 Contributing/License 根因落地：GitHub Primer 新版 ActionMenu 把菜单
+   渲染到 body 下的 portal（anchored-position[data-target=action-menu.overlay]
+   → .Overlay → ul[role=menu].ActionListWrap），不在 More 按钮容器内；
+   findMoreMenu 新增 allowGlobalFallback 参数，预检（未点击）仅接受所有权
+   明确的菜单（aria-controls/触发器容器），点击后等待才允许扫 body portal，
+   且只收可见菜单 —— 消除假成功，同时让 portal 菜单真正可被收割。
+2. 收割等待升级：1000ms 单轮等待改为总计 2.5s（250ms 步进），兼容 React
+   异步创建 portal 的延迟；触发器本就展开时不重复点击。
+3. 面板文本统一左对齐回推：克隆文本 span（data-content / data-component=text）
+   与手工条目 label 不再 flex:1 拉伸，改 flex:0 1 auto（不拉伸、仅防溢出
+   ellipsis），各项文本统一从行首开始。
+4. 面板结构版本 v7，升级后旧面板强制重建一次。
+]
+
+v2026.10.1 [2026-09-19]
+修复文件区 Contributing/License 缺失与面板假滚动条
+[
+1. 假成功收割修复：findMoreMenu 全局兑底曾抓到 React 关闭后仍挂载的隐藏旧菜单 portal，把其他栏的下拉项误认为本栏已收割，目标栏从此永不重试；现全局兑底与收割等待均只接受实际可见的菜单（isVisibleMenu：非 hidden、computedStyle 可见、有尺寸）。
+2. 缺栏补收范围扩展：扫描时无触发器（注水未完成）的栏同样进入 missedBars；本轮新出现且不在缓存的栏增量纳入缺栏名单，由下一轮补收，消除“首轮时栏不存在 → 永不补收”。
+3. 面板假滚动条修复：条目行 overflow hidden，克隆 nowrap 长文本不再横向撑开（Windows 上横向溢出会把 overflow-x 算成 auto，出现经典滚动条并挤压触发纵向滚动）；显式 overflow-x hidden；克隆文本节点（data-content / data-component=text）ellipsize，图标包装不受影响。
+4. 面板结构版本 v6，升级后旧面板强制重建一次。
+]
+
+v2026.9.31 [2026-09-19]
+缺栏补收与面板按栏分组
+[
+1. 修复文件区 More 溢出项永久缺失：首轮收割为空/失败的栏记录为 missedBars，后续每轮重点重试最多 2 栏，成功则入面板；不再因缓存命中而永远跳过。
+2. 面板按栏分组：每条条目记录所属栏，跨栏时插入 1px 主题自适应分割线 + 11px 栏名小标题（首个条目前不加）。
+3. 补收有界节奏：每轮最多重试 2 栏，不狂点触发器；视口桶变化仍走全量重收割。
+4. 面板结构版本 v5，升级后旧面板强制重建一次。
+]
+
 v2026.9.30 [2026-09-18]
 面板条目整体复用原控件，胶囊样式保真
 [

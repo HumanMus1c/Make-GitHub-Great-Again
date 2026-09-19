@@ -1,2 +1,7 @@
 /files
 /.agent_history
+node_modules/
+package.json
+package-lock.json
+tools/diag.json
+tools/probe.json

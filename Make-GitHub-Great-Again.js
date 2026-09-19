@@ -2,7 +2,7 @@
 // @name                    Make-GitHub-Great-Again
 // @name:en                 Make-GitHub-Great-Again
 // @namespace               https://github.com
-// @version                 2026.9.30
+// @version 2026.10.16
 // @description             为 Release 的项目添加背景色，识别文件系统平台类型，以及高亮自定义关键词；修正移动端仓库页右侧空白列，新增移动端左侧悬浮导航
 // @description:en          Add background colors to each Release Asset, identify the file system platform type and custom keywords highlighter. Fix empty right column on mobile.
 // @author                  https://github.com/HumanMus1c
@@ -4217,6 +4217,10 @@
   // 3) 逐栏定位 More 触发器并收割其下拉面板内导航项（复用 findMoreTrigger / findMoreMenu / extractMenuItems / harvestMoreItems）。
   // 4) 将各栏收割项与既有导航项按顺序合并、去重，渲染为左侧悬浮导航栏（悬浮球 + 可展开面板）。
   // 5) 不改动原生页面 DOM（原生 More 行为保持不变）；SPA 导航后按新路径重建。
+  // 6) 收割点击期间锁定页面滚动 + 每栏重试有预算上限：溢出项只存在于 More
+  //    菜单打开后的 portal 里（数据层拿不到带原生样式的节点），必须模拟点击
+  //    收割；但点击/Escape 会触发 primer-react 焦点还原引发页面滚动跳动，
+  //    失败栏无限重试会形成"顶部↔README 区"来回振荡（2026-09-19 实证）。
   const NAV_DOCK_ID = "mgga-mobile-nav-dock";
   const NAV_DOCK_TOGGLE_ID = "mgga-mobile-nav-dock-toggle";
   const NAV_DOCK_STYLE_ID = "mgga-mobile-nav-dock-style";
@@ -4224,7 +4228,23 @@
   let navDockDebounce = null;
   let navDockBuilding = false;
   let navDockExpanded = false;
-  let navDockHarvestCache = null;
+  /**
+   * 一次性收割会话：进入仓库页/刷新/SPA 跨路径时开启（load run 级）。
+   * 每个触发器元素在页面生命周期内至多点击一次：收割到条目即入缓存（面板
+   * 与收割产物此后不再变化），点击后为空则记入失败（本页面内该元素绝不
+   * 再点击）。按**元素**而非按栏记录 —— GitHub 重排（切 Responsive）/React
+   * 重渲染会重建触发器节点，按元素记录让新节点获得一次收割机会，同时
+   * 同一元素绝不重复点击（防振荡）。视口变化重建只读既有缓存。
+   */
+  let navDockHarvestSession = null;
+  /** 全局点击上限（整页生命周期），防御性兜底（正常远达不到） */
+  const NAV_DOCK_SESSION_MAX_CLICKS = 12;
+  /** load run 序号：每次进入/刷新/SPA 跨路径 +1，构成会话键的一部分 */
+  let navDockLoadRunSeq = 0;
+  /** 上次应用 dock 的路径，用于识别"进入新页面" */
+  let navDockLastBuiltPath = null;
+  /** 面板结构版本：DOM 结构变更时递增，旧面板强制重建一次 */
+  const NAV_DOCK_STRUCT_VER = "10";
 
   /** 同步悬浮球与面板的展开态 UI（点击悬浮球与油猴菜单共用，过渡对齐 Release 设置面板） */
   function setNavDockExpanded(expanded) {
@@ -4365,6 +4385,7 @@
         max-height: calc(100vh - 1em) !important;
         max-height: calc(100dvh - 1em) !important;
         overflow-y: auto !important;
+        overflow-x: hidden !important;
         -webkit-overflow-scrolling: touch !important;
         box-sizing: border-box !important;
         padding: 6px !important;
@@ -4402,6 +4423,15 @@
         color: var(--fgColor-muted, var(--color-fg-muted, #59636e)) !important;
       }
 
+      #mgga-mobile-nav-dock .mgga-nav-dock-header-version {
+        font-size: 10px !important;
+        font-weight: normal !important;
+        color: var(--fgColor-muted, var(--color-fg-muted, #59636e)) !important;
+        opacity: 0.7 !important;
+        margin-left: 6px !important;
+        white-space: nowrap !important;
+      }
+
       #mgga-mobile-nav-dock .mgga-nav-dock-close {
         background: transparent !important;
         border: none !important;
@@ -4419,7 +4449,8 @@
       }
 
       /* 克隆复用的原控件：布局由面板接管，视觉（配色/字号/内边距/hover）
-         交给 GitHub 原生类（UnderlineNav-item 等），保证与页面无差异 */
+         交给 GitHub 原生类（UnderlineNav-item 等），保证与页面无差异。
+         行内溢出隐藏：克隆 nowrap 长文本不再横向撑开面板 */
       #mgga-mobile-nav-dock a {
         display: flex !important;
         align-items: center !important;
@@ -4427,6 +4458,7 @@
         box-sizing: border-box !important;
         margin: 0 !important;
         white-space: nowrap !important;
+        overflow: hidden !important;
       }
 
       /* 手工兑底条目（无源锚点可克隆时）沿用原面板视觉 */
@@ -4463,11 +4495,41 @@
       }
 
       #mgga-mobile-nav-dock .mgga-nav-dock-label {
-        flex: 1 1 auto !important;
+        flex: 0 1 auto !important;
         min-width: 0 !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
         white-space: nowrap !important;
+      }
+
+      /* 克隆条目内的文本节点：GitHub tab 文本有两种形态（data-content 或
+         data-component=text）。仅防溢出（min-width+hidden+ellipsis），
+         不拉伸 —— flex:1 会把短文本推离行首，破坏各项统一左对齐 */
+      #mgga-mobile-nav-dock a > span[data-content],
+      #mgga-mobile-nav-dock a > span[data-component='text'] {
+        flex: 0 1 auto !important;
+        min-width: 0 !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+      }
+
+      /* 跨栏轻微分割线：主题自适应，含栏名小标题 */
+      #mgga-mobile-nav-dock .mgga-nav-dock-divider {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        margin: 6px 4px 4px !important;
+        border-top: 1px solid var(--borderColor-muted, var(--color-border-muted, rgba(125, 125, 125, 0.25))) !important;
+        padding-top: 4px !important;
+      }
+
+      #mgga-mobile-nav-dock .mgga-nav-dock-divider-caption {
+        font-size: 11px !important;
+        line-height: 1.2 !important;
+        color: var(--fgColor-muted, var(--color-fg-muted, #59636e)) !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
       }
     `;
     document.head.appendChild(style);
@@ -4523,7 +4585,11 @@
     if (!text) return false;
     // 文件区导航的 More 按钮文本为 "More items"（带隐藏后缀），需前缀匹配
     const t = String(text).replace(/\s+/g, " ").trim().toLowerCase();
-    return /^(more|更多|더보기|もっと見る|mehr|plus|⋯|\.\.\.|more items)/i.test(t) && t.length <= 16;
+    if (/^(more|更多|더보기|もっと見る|mehr|plus|⋯|\.\.\.|more items)/i.test(t) && t.length <= 16) return true;
+    // 登录态头部（react-partial）可能只渲染省略号图标 + aria-label 之外的
+    // 可访问名（如 "Additional navigation" / "More navigation"），按语义放宽
+    if (/more|additional|navigation|nav/i.test(t) && t.length <= 40) return true;
+    return false;
   }
 
   function findMoreTrigger(nav) {
@@ -4537,6 +4603,15 @@
         el.getAttribute("data-more") ||
         normalizedText(el);
       if (isMoreLabel(label)) return el;
+      // 纯图标 More 触发器（省略号 ⋯ / 三点图标，无可访问名文本）：
+      // 文本匹配不到时，按 aria-haspopup + aria-expanded 的弹出语义识别
+      if (
+        el.getAttribute("aria-haspopup") &&
+        el.getAttribute("aria-expanded") !== null
+      ) {
+        if (isMoreLabel(label)) return el;
+        if (!normalizedText(el)) return el;
+      }
       if (
         el.getAttribute("aria-haspopup") === "true" &&
         el.getAttribute("aria-expanded") !== null &&
@@ -4550,16 +4625,74 @@
       const summary = details.querySelector("summary");
       if (summary && isMoreLabel(normalizedText(summary))) return summary;
     }
+    // 新版登录态头部（react-partial）可能把 More 触发器渲染为 nav 的
+    // 兄弟节点（nav 与触发器平级、同属一个 header 容器），甚至挂在 nav
+    // 的更上层容器里。逐步向上扩大查找（至多 3 层），每层要求：外层容器
+    // 的首个 nav 是本栏（多栏容器不扩大，避免把相邻栏的 More 误认为
+    // 本栏触发器），且候选不归属于其它 nav。
+    let scope = nav;
+    for (let up = 0; up < 3; up++) {
+      const outer = scope.parentElement;
+      if (!outer) break;
+      scope = outer;
+      if (scope.querySelector("nav") !== nav) continue;
+      // 仓库页头部内容区（PageLayout-HeaderContent / show-whenNarrow）里的
+      // "⋯" 元数据 kebab（stars/forks/watching/branches/tags/Activity 等）
+      // 也是纯图标弹出按钮，会被本扩展误认成仓库标签栏的溢出触发器，
+      // 把统计链接收割成"导航项"。头部内容区不是标签栏的溢出宿主，跳过。
+      if (scope.matches("[class*='HeaderContent'], [class*='show-whenNarrow']")) {
+        continue;
+      }
+      const outerCandidates = scope.querySelectorAll(
+        "button, a, summary, [role=button]"
+      );
+      for (const el of outerCandidates) {
+        if (!(el instanceof HTMLElement)) continue;
+        if (nav.contains(el)) continue;
+        const ownerNav = el.closest("nav");
+        if (ownerNav && ownerNav !== nav) continue;
+        // 位于仓库头部内容区（含 kebab 元数据菜单）内的候选不认领
+        if (
+          el.closest(
+            "[class*='HeaderContent'], [class*='show-whenNarrow']"
+          )
+        ) {
+          continue;
+        }
+        const label =
+          el.getAttribute("aria-label") ||
+          el.getAttribute("data-more") ||
+          normalizedText(el);
+        if (isMoreLabel(label)) return el;
+        // 纯图标弹出按钮兜底（见上）
+        if (
+          el.getAttribute("aria-haspopup") &&
+          el.getAttribute("aria-expanded") !== null &&
+          !normalizedText(el)
+        ) {
+          return el;
+        }
+      }
+    }
     return null;
   }
 
-  function findMoreMenu(trigger) {
+  /**
+   * 定位 More 触发器对应的菜单。
+   * allowGlobalFallback=false 时仅接受所有权明确的菜单（aria-controls 指向、
+   * 触发器容器内），用于未点击的预检 —— 避免把页面上恰好可见的其它菜单
+   * 误认为本栏菜单（假成功收割，目标栏从此永不重试）。
+   * 点击后的收割传 true，允许扫 body 下的 ActionMenu portal（GitHub Primer
+   * 新版把菜单渲染到 body，容器不在触发器附近）。
+   */
+  function findMoreMenu(trigger, allowGlobalFallback) {
     if (!trigger) return null;
     if (trigger instanceof HTMLDetailsElement) return trigger;
     if (trigger.tagName === "SUMMARY" && trigger.parentElement) {
       return trigger.parentElement;
     }
 
+    // aria-controls 是触发器与菜单的所有权链接，隐藏 portal 也算本栏菜单
     const controls = trigger.getAttribute("aria-controls");
     if (controls) {
       const byId = document.getElementById(controls);
@@ -4570,20 +4703,63 @@
       "li, [class*='ActionMenu'], [class*='action-menu'], details, div"
     );
     if (wrapper) {
-      const menus = wrapper.querySelectorAll(
-        "[class*='ActionList'], [class*='SelectMenu'], [class*='dropdown-menu'], [role='menu'], ul, [hidden]"
-      );
-      if (menus.length) return menus[menus.length - 1];
-      if (wrapper !== trigger && wrapper.querySelectorAll("a[href]").length) {
-        return wrapper;
+      // 含 nav 的容器是导航条本身（More 与 tab 列表同容器的新版头部正是
+      // 此结构），绝不能当菜单 —— 否则预检收割到本栏外显项即"假成功"，
+      // 此后永不点击 More，溢出项永久丢失（登录态头部实证）。
+      const wrapperContainsNav = !!wrapper.querySelector("nav");
+      if (!wrapperContainsNav) {
+        const menus = wrapper.querySelectorAll(
+          "[class*='ActionList'], [class*='SelectMenu'], [class*='dropdown-menu'], [role='menu'], ul, [hidden]"
+        );
+        // 本栏导航内容防御：More 按钮与 tab 列表同处一个容器时，候选
+        // "菜单"可能是本栏导航列表本身或其内部节点（首个 tab 锚点、溢出
+        // 隐藏 li 等）。把它们当菜单收割会得到与可见项重复/残缺的条目，
+        // 预检假成功后不再点击 More，溢出项永久丢失。预检阶段一律拒绝
+        // 本栏 nav 内部的候选；真实菜单由点击后的全局兑底（仅收可见）
+        // 或 aria-controls / details 所有权路径提供。
+        const hostNav = trigger.closest("nav");
+        const isInsideHost = (m) => !!(hostNav && hostNav.contains(m));
+        for (let i = menus.length - 1; i >= 0; i--) {
+          const m = menus[i];
+          if (isInsideHost(m)) continue;
+          return m;
+        }
+        if (
+          wrapper !== trigger &&
+          wrapper.querySelectorAll("a[href]").length &&
+          !isInsideHost(wrapper)
+        ) {
+          return wrapper;
+        }
       }
     }
 
-    const openMenus = document.querySelectorAll(
-      "[data-target~='action-menu.overlay'], .ActionMenu-Overlay, [role='menu']"
-    );
+    if (!allowGlobalFallback) return null;
+
+    // body 下的 ActionMenu overlay portal：仅接受实际可见的菜单（React
+    // 关闭后 portal 可能仍挂载，抓到隐藏旧菜单会把其他栏的下拉项误认为
+    // 本栏的），且不在触发器自身内部（否则 wrapper 分支已处理）
+    const openMenus = Array.from(
+      document.querySelectorAll(
+        "[data-target~='action-menu.overlay'], .ActionMenu-Overlay, [class*='ActionMenu'] [role='menu'], [role='menu'], div[class*='Overlay'] [class*='ActionList'], div[class*='Overlay'] ul[role='listbox']"
+      )
+    ).filter((m) => isVisibleMenu(m) && !trigger.contains(m));
     if (openMenus.length) return openMenus[openMenus.length - 1];
     return null;
+  }
+
+  /** 菜单元素当前是否实际可见（过滤关闭后仍挂载的隐藏 portal） */
+  function isVisibleMenu(el) {
+    if (!el) return false;
+    if (el.hasAttribute("hidden")) return false;
+    try {
+      const style = window.getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") return false;
+    } catch (_) {
+      /* ignore */
+    }
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 || rect.height > 0;
   }
 
   function extractMenuItems(menuRoot) {
@@ -4594,8 +4770,11 @@
     anchors.forEach((a) => {
       if (!(a instanceof HTMLAnchorElement)) return;
       const href = a.getAttribute("href");
-      if (!href || href === "#" || href.startsWith("javascript:")) return;
-      const label = a.getAttribute("aria-label") || normalizedText(a);
+      // href="#" 的溢出 tab（React 客户端路由项）放行：pushItem 侧按
+      // 白名单/选中态解析或丢弃，与文件区直扫规则一致，避免溢出的
+      // License/Contributing 类 tab 在收割层被提前丢掉
+      if (!href || href.startsWith("javascript:")) return;
+      const label = a.getAttribute("aria-label") || navDockAnchorLabel(a);
       if (!label) return;
       if (isMoreLabel(label)) return;
       const key = href + "|" + label;
@@ -4606,29 +4785,40 @@
     return items;
   }
 
-  function waitFor(predicate, timeoutMs) {
-    return new Promise((resolve) => {
-      const start = Date.now();
-      const tick = () => {
-        let value = null;
-        try {
-          value = predicate();
-        } catch (_) {
-          value = null;
-        }
-        if (value) return resolve(value);
-        if (Date.now() - start >= timeoutMs) return resolve(null);
-        setTimeout(tick, 50);
-      };
-      tick();
-    });
-  }
-
   async function harvestMoreItems(trigger) {
-    let menu = findMoreMenu(trigger);
+    // 文件区 wrap 模式的 More 按钮常驻 display:none(data-overflow-mode=wrap,
+    // 永不展开):点击它纯属浪费且其菜单(若有)由换行直扫覆盖,直接跳过
+    if (trigger instanceof HTMLElement) {
+      const triggerStyle = window.getComputedStyle(trigger);
+      if (triggerStyle.display === "none" || triggerStyle.visibility === "hidden") {
+        return [];
+      }
+      const rect = trigger.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return [];
+    }
+    // 预检不带全局兜底：未点击时页面上其它菜单的可见残留会造成假成功
+    let menu = findMoreMenu(trigger, false);
     let items = extractMenuItems(menu);
     if (items.length) return items;
 
+    // 点击收割期间锁定页面滚动：More 触发器可能在视口外，click 打开与
+    // Escape 关闭都会让 primer-react 把焦点还原/移交给触发器或菜单项，
+    // 浏览器随之平滑滚动使目标可见（取证：focus 调用栈来自 primer-react）。
+    // 收割窗口内锁死 html 滚动，焦点还原滚不动页面，结束后立即恢复。
+    lockPageScrollForHarvest();
+    try {
+      return await harvestMoreItemsLocked(trigger);
+    } finally {
+      unlockPageScrollForHarvest();
+    }
+  }
+
+  async function harvestMoreItemsLocked(trigger) {
+    // 注意:本函数与外层包装各自持有独立的 menu/items —— 拆分时若漏声明,
+    // 非严格模式下赋值成隐式全局、读取未赋值变量直接抛 ReferenceError,
+    // 会导致点击收割整栏失败且被上层 catch 静默吞掉(v2026.10.5-10.7 实证)。
+    let menu = null;
+    let items = [];
     const originallyOpen =
       trigger.getAttribute("aria-expanded") === "true" ||
       (trigger instanceof HTMLDetailsElement && trigger.open) ||
@@ -4643,8 +4833,43 @@
       } catch (_) {
         /* ignore */
       }
-      menu = await waitFor(() => findMoreMenu(trigger), 1000);
-      items = extractMenuItems(menu);
+      // 点击后允许全局兜底 —— Primer 新版把菜单 portal 渲染到 body 下。
+      // React 创建 portal 有延迟：总计 2.5s（250ms 步进）有界等待可见菜单
+      const start = Date.now();
+      while (Date.now() - start < 2500) {
+        menu = findMoreMenu(trigger, true);
+        if (menu && isVisibleMenu(menu)) {
+          items = extractMenuItems(menu);
+          if (items.length) break;
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      if (!items.length && menu) items = extractMenuItems(menu);
+      // 最终通用兜底：文档顺序中本触发器之后的第一个可见含锚点菜单/列表
+      // （覆盖任意 portal 结构与 class 命名，如登录态头部 react-partial
+      // 渲染的非标 ActionMenu）。仅收可见节点，避免抓到隐藏旧 portal。
+      if (!items.length) {
+        const all = Array.from(
+          document.querySelectorAll(
+            "[role='menu'], [role='listbox'], [class*='ActionList'], [class*='ActionMenu'], ul"
+          )
+        ).filter(
+          (m) =>
+            isVisibleMenu(m) &&
+            !trigger.contains(m) &&
+            m !== menu &&
+            m.querySelector("a[href]")
+        );
+        const after = all.filter((m) =>
+          trigger.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING
+        );
+        const fallback = after[0] || null;
+        if (fallback) {
+          const fbItems = extractMenuItems(fallback);
+          // 全局兜底必须严格多于预检所见才有意义，否则是假成功
+          if (fbItems.length > items.length) items = fbItems;
+        }
+      }
       try {
         document.dispatchEvent(
           new KeyboardEvent("keydown", { key: "Escape", bubbles: true })
@@ -4663,9 +4888,74 @@
         }
       }
     } else {
-      items = extractMenuItems(menu);
+      // 本就展开：菜单应已可见，允许全局兜底但同样只收可见菜单
+      menu = findMoreMenu(trigger, true);
+      if (menu && isVisibleMenu(menu)) items = extractMenuItems(menu);
     }
     return items;
+  }
+
+  // === 收割期间滚动锁定（防止焦点还原引发页面跳动） ===
+  const NAV_DOCK_SCROLL_LOCK_STYLE_ID = "mgga-nav-dock-scroll-lock-style";
+  let navDockScrollLockCount = 0;
+  let navDockScrollSnapY = 0;
+  let navDockScrollSnapHandler = null;
+
+  /**
+   * 锁定页面滚动：①html/body overflow hidden（挡用户输入滚动）；
+   * ②scroll 捕获阶段瞬时回弹 —— 程序化滚动（焦点还原、scrollIntoView）
+   * 依规范可滚动 overflow:hidden 容器，仅 overflow 锁不住，必须把
+   * 窗口 scrollY 实时拉回锁定时的位置。
+   */
+  function lockPageScrollForHarvest() {
+    navDockScrollLockCount++;
+    if (navDockScrollLockCount > 1) return;
+    navDockScrollSnapY = window.scrollY;
+    document.documentElement.classList.add("mgga-harvest-scroll-lock");
+    if (!document.getElementById(NAV_DOCK_SCROLL_LOCK_STYLE_ID)) {
+      const style = document.createElement("style");
+      style.id = NAV_DOCK_SCROLL_LOCK_STYLE_ID;
+      style.setAttribute("data-mgga-mutation-guard", "1");
+      style.textContent =
+        "html.mgga-harvest-scroll-lock, html.mgga-harvest-scroll-lock body { overflow: hidden !important; }";
+      (document.head || document.documentElement).appendChild(style);
+    }
+    navDockScrollSnapHandler = () => {
+      if (window.scrollY !== navDockScrollSnapY) {
+        window.scrollTo(0, navDockScrollSnapY);
+      }
+    };
+    window.addEventListener("scroll", navDockScrollSnapHandler, {
+      capture: true,
+      passive: true,
+    });
+  }
+
+  /** 解锁页面滚动：引用计数归零时才真正恢复 */
+  function unlockPageScrollForHarvest() {
+    navDockScrollLockCount = Math.max(0, navDockScrollLockCount - 1);
+    if (navDockScrollLockCount > 0) return;
+    if (navDockScrollSnapHandler) {
+      window.removeEventListener("scroll", navDockScrollSnapHandler, {
+        capture: true,
+      });
+      navDockScrollSnapHandler = null;
+    }
+    document.documentElement.classList.remove("mgga-harvest-scroll-lock");
+    const style = document.getElementById(NAV_DOCK_SCROLL_LOCK_STYLE_ID);
+    if (style) style.remove();
+    // 在途平滑滚动（焦点还原触发的）会在解锁后继续走完动画并停在
+    // 触发器位置 —— 立即恢复锁定位置，并在 1.5s 宽限期内有界回弹
+    // （只覆盖仍在飞向错误位置的动画，不干扰用户主动滚动）。
+    const snapY = navDockScrollSnapY;
+    window.scrollTo(0, snapY);
+    const graceEnd = Date.now() + 1500;
+    const rebounce = () => {
+      if (Date.now() > graceEnd || window.scrollY === snapY) return;
+      window.scrollTo(0, snapY);
+      setTimeout(rebounce, 50);
+    };
+    setTimeout(rebounce, 50);
   }
 
   /** 导航条形栏的稳定缓存键：aria-label + 类名前缀 */
@@ -4684,6 +4974,10 @@
   function collectRepoHomeNavItems(navList, harvestedByBar) {
     const items = [];
     const seen = new Set();
+    /** 规范化标签 → 已收录 href(跨栏同名去重) */
+    const seenDest = new Map();
+    /** 归一目的地路径 → 已收录(跨栏别名去重) */
+    const seenDestByPath = new Map();
     // React 客户端路由 tab（如文件区 README）的 href 为 "#"，
     // 但带 aria-current 选中态，是真实导航项；落地到当前页路径
     const pushItem = (href, label, source) => {
@@ -4691,18 +4985,93 @@
       const selectedAnchor =
         source instanceof HTMLAnchorElement &&
         (source.hasAttribute("aria-current") || source.hasAttribute("data-selected"));
-      if (href === "#" && !selectedAnchor) return;
+      if (href === "#" && !selectedAnchor) {
+        // 文件区白名单 tab（License/Contributing 等）：React 客户端路由占位，
+        // 按页面证据解析真实路径；解析失败仍丢弃
+        if (
+          source instanceof HTMLAnchorElement &&
+          isFileAreaPlaceholderTab(source)
+        ) {
+          const resolved = resolveFileAreaPlaceholderTabHref(
+            source,
+            source.getAttribute("aria-label") || navDockAnchorLabel(source) || ""
+          );
+          if (resolved) {
+            href = resolved;
+          } else {
+            return;
+          }
+        } else {
+          return;
+        }
+      }
       if (href === "#" && selectedAnchor) {
         href = location.pathname;
       }
       if (!label) return;
       label = String(label).replace(/\s+/g, " ").trim();
       if (!label || isMoreLabel(label)) return;
-      const key = href + "|" + label;
-      if (seen.has(key)) return;
-      seen.add(key);
-      items.push({ href, label, source: source || null });
+      // 同名 tab 跨栏去重：新版 React 标签条与旧版 UnderlineNav 并存
+      // （aria-label 均可为 "Repository"），同一 tab 的 href 形态不同
+      // （React 路由条落地到当前路径/片段，旧条为真实路径），精确
+      // href|label 键无法命中。规则：规范化标签（去计数后缀、小写）
+      // 相同 → 视作同一 tab，先到先得（canonical 可见 tab 先索引），
+      // 无论 href 形态如何（登录态双条曾以未知 href 形态漏过目的地
+      // 等价判定）。面板仍显示原始标签。
+      // 规范化标签：去尾部计数后缀（兼容 "Issues 1834" / "Issues 1.8k" /
+      // 无空格拼接的 "Issues1.8k" / 旧式括号 "Issues (18)"），再小写。
+      // GitHub DOM 里图标/文字/计数器之间常无空白字符，且新旧条计数格式
+      // 不同（1.8k vs 1834），必须统一剥掉才能命中同名去重。
+      const normLabel = String(label)
+        .replace(/[\s\u00a0]*\(?[\d][\d.,]*[kmb]?\)?[\s\u00a0]*$/i, "")
+        .trim()
+        .toLowerCase();
+      if (seenDest.has(normLabel)) return;
+      seenDest.set(normLabel, href);
+      // 目的地去重（别名拦截）：GitHub 新旧导航对同一 tab 使用不同名称
+      // （旧条 "Security" vs 新条 "Security and quality"），按标签去重
+      // 永远拦不住；同一真实路径只保留首个入口，与标签去重双保险。
+      // URL 解析归一：More 菜单收割可能拿到绝对 URL，与直扫的相对路径
+      // 必须归到同一键；跨源或不可解析则保留原始形态（不同源不合并）。
+      const destOf = (raw) => {
+        try {
+          const u = new URL(raw, location.origin);
+          if (u.origin !== location.origin) return null;
+          return (u.pathname.replace(/\/+$/, "") || "/").toLowerCase();
+        } catch (_) {
+          return null;
+        }
+      };
+      const hereKey = destOf(location.pathname);
+      const destKey = destOf(href);
+      // 当前页路径豁免收紧：仅 Code/README 两个真实 tab 共享当前页路径，
+      // 它们由标签去重管辖；More 菜单里选中 tab 的别名副本也落在当前
+      // 页路径，不做豁免（白名单收敛到 code/readme）。
+      const normForExempt = normLabel.replace(/\s+/g, "");
+      const hereExempt =
+        destKey === hereKey &&
+        (normForExempt === "code" || normForExempt === "readme");
+      if (
+        destKey &&
+        !hereExempt &&
+        seenDestByPath.has(destKey)
+      ) {
+        return;
+      }
+      if (destKey) seenDestByPath.set(destKey, true);
+      const stripSlash = (h) => String(h || "").replace(/\/+$/, "");
+      const normKey =
+        stripSlash(href) + "|" + normLabel;
+      const exactKey = href + "|" + label;
+      if (seen.has(normKey) || seen.has(exactKey)) return;
+      seen.add(normKey);
+      seen.add(exactKey);
+      items.push({ href, label, source: source || null, barKey: currentBarKey, barLabel: currentBarLabel });
     };
+
+    // 当前正在索引的栏（用于面板分组与收割重试）
+    let currentBarKey = "";
+    let currentBarLabel = "";
 
     // 仓库主页路径下无导航意义的锚点：面包屑 owner/repo、当前路径自链。
     // 注意：真实 tab（Code/README）也可能命中这些 href，但它们带选中态
@@ -4712,7 +5081,34 @@
       a.hasAttribute("aria-current") ||
       a.hasAttribute("data-selected") ||
       a.getAttribute("data-selected-links") != null;
+    const ownerRepo = location.pathname.split("/").slice(1, 3).join("/");
+    const fileAreaTabHrefCache = new Map();
+    const resolveFileAreaPlaceholderTabHref = (a, label) => {
+      const key = label.toLowerCase();
+      if (!fileAreaTabHrefCache.has(key)) {
+        fileAreaTabHrefCache.set(
+          key,
+          resolveFileAreaTabHref(label, ownerRepo)
+        );
+      }
+      return fileAreaTabHrefCache.get(key);
+    };
+    // 文件区白名单 tab（License/Contributing/"MIT license" 等）：href="#"
+    // 但有真实路由（React 拦截点击做客户端路由），可由页面证据解析落地路径
+    const isFileAreaPlaceholderTab = (a) => {
+      if (a.getAttribute("href") !== "#") return false;
+      if (isSelectedTab(a)) return false;
+      const label = (
+        a.getAttribute("aria-label") ||
+        navDockAnchorLabel(a) ||
+        ""
+      )
+        .replace(/\s+/g, " ")
+        .trim();
+      return isFileAreaTabLabel(label);
+    };
     const isBreadcrumbish = (a) => {
+      if (isFileAreaPlaceholderTab(a)) return false;
       const href = a.getAttribute("href") || "";
       if (!href || href.startsWith("#") || href === location.pathname) return !isSelectedTab(a);
       if (!repoHomeRe.test(href)) return false;
@@ -4726,11 +5122,22 @@
       const navAria = (nav.getAttribute("aria-label") || "").toLowerCase();
       if (navAria === "global" || navAria === "footer") return;
 
+      // 记录当前栏归属（分组与收割重试用）
+      currentBarKey = navBarKey(nav);
+      currentBarLabel =
+        nav.getAttribute("aria-label") ||
+        navDockAnchorLabel(nav.querySelector("a[href]")) ||
+        "";
+
       nav.querySelectorAll("a[href]").forEach((a) => {
         if (!(a instanceof HTMLAnchorElement)) return;
-        if (a.matches("[hidden]")) return;
+        // 文件区白名单占位 tab：即使 GitHub 在窄视口下隐藏了所在 li，
+        // 也在 dock 中保留（可解析真实路由；换行模式下这些项在页面上
+        // 无任何入口，dock 提供它们正是补充导航）
+        const isFileTab = isFileAreaPlaceholderTab(a);
+        if (a.matches("[hidden]") && !isFileTab) return;
         // 隐藏包装元素（UnderlineNav wrap spacer 等）内的内容不索引
-        if (a.closest('[aria-hidden="true"]')) return;
+        if (!isFileTab && a.closest('[aria-hidden="true"]')) return;
         if (a.closest("footer")) return;
         // 跳过 dock 自身条目与标题栏关闭按钮等
         if (a.closest(`#${NAV_DOCK_ID}`)) return;
@@ -4753,6 +5160,114 @@
   }
 
   /** 仓库主页所有导航条形栏：全域扫描 nav 容器（含头部、仓库标签条、文件区），排除页脚与自身 dock */
+  /** 文件区白名单 tab 固定名 */
+  const FILE_AREA_TAB_NAMES_EXACT = new Set([
+    "license",
+    "licence",
+    "contributing",
+    "code of conduct",
+    "security",
+    "citation",
+    "readme",
+  ]);
+
+  /**
+   * 文件区 tab 白名单判定：固定名（License/Contributing/...）或
+   * 许可证类型前缀名（"MIT license"/"Apache-2.0 licence" 等，尾 token 匹配）。
+   * resolveFileAreaTabHref 与 collectRepoHomeNavItems 的占位 tab 判定共用。
+   */
+  function isFileAreaTabLabel(label) {
+    const lower = String(label || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+    if (!lower) return false;
+    if (FILE_AREA_TAB_NAMES_EXACT.has(lower)) return true;
+    const tokens = lower.split(" ");
+    const tail = tokens[tokens.length - 1];
+    return tail === "license" || tail === "licence";
+  }
+
+  /**
+   * 解析文件区 nav 中 href="#" 的 React 路由 tab（License / Contributing /
+   * Code of conduct 等）的真实落地路径。新版 GitHub 文件区用
+   * data-overflow-mode="wrap" 溢出模式，这些 tab 直接渲染在 nav 内且
+   * href 为占位符，点击由 React 拦截 —— 必须从页面证据反推真实路径。
+   * 证据链：
+   *  1) 页面已有指向 /blob|/tree/.../<识别名> 的锚点（如侧栏 License 链接）
+   *  2) 内嵌 React flight JSON 中的 tab 条目（"tabName":"License" + path/refName）
+   *  3) 社区文件约定名 + GitHub 通用的 blob/HEAD 引用
+   * 返回 null 表示无法确定，调用方保持丢弃。
+   */
+  function resolveFileAreaTabHref(tabLabel, ownerRepo) {
+    if (!tabLabel) return null;
+    const label = String(tabLabel).trim();
+    if (!isFileAreaTabLabel(label)) return null;
+    const lower = label.toLowerCase();
+    const FILE_AREA_TAB_WHITELIST = [
+      { tab: "license", names: ["license", "license.md", "licence", "licence.md"] },
+      { tab: "contributing", names: ["contributing", "contributing.md"] },
+      { tab: "code of conduct", names: ["code_of_conduct", "code_of_conduct.md", "code of conduct", "code of conduct.md"] },
+      { tab: "security", names: ["security", "security.md", "security policy"] },
+      { tab: "citation", names: ["citation", "citation.cff"] },
+      { tab: "readme", names: ["readme", "readme.md"] },
+    ];
+    let entry = FILE_AREA_TAB_WHITELIST.find((e) => e.tab === lower);
+    let labelForData = label;
+    if (!entry) {
+      const tokens = lower.split(/\s+/);
+      const tail = tokens[tokens.length - 1];
+      if (tail === "license" || tail === "licence") {
+        // 许可证名前缀（MIT/Apache-2.0/...）：类型未知，不猜测具体文件名，
+        // 只依赖证据 1/2（页面锚点、内嵌数据）；约定名兜底用 license.md
+        entry = FILE_AREA_TAB_WHITELIST[0];
+        labelForData = "License";
+      }
+    }
+    if (!entry) return null;
+
+    // 证据 1: 页面上已渲染的 blob/tree 锚点（文件列表、侧栏等）
+    const hrefRe = new RegExp(
+      "^/" + ownerRepo + "/(blob|tree)/[^/]+/(" +
+      entry.names
+        .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+        .join("|") +
+      ")$",
+      "i"
+    );
+    const match = Array.from(
+      document.querySelectorAll(
+        'a[href^="/' + ownerRepo + '/blob/"], a[href^="/' + ownerRepo + '/tree/"]'
+      )
+    ).find((a) => hrefRe.test(a.getAttribute("href") || ""));
+    if (match) return match.getAttribute("href");
+
+    // 证据 2: 内嵌 React flight payload 中的 tab 定义（tabName + path + refName）
+    try {
+      const scripts = Array.from(
+        document.querySelectorAll("script:not([src])")
+      );
+      for (const s of scripts) {
+        const txt = s.textContent || "";
+        if (txt.length < 20 || txt.length > 4000000) continue;
+        const re = new RegExp(
+          "\\\"tabName\\\":\\\"" + labelForData.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
+          "\\\"[^}]{0,600}?\\\"path\\\":\\\"([^\\\"]+)\\\"[^}]{0,600}?\\\"refName\\\":\\\"([^\\\"]+)\\\"",
+          "i"
+        );
+        const m = txt.match(re);
+        if (m && m[1] && m[2]) {
+          return "/" + ownerRepo + "/blob/" + m[2] + "/" + m[1];
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
+
+    // 证据 3: 社区文件约定名 + GitHub 通用的 blob/HEAD 引用
+    return "/" + ownerRepo + "/blob/HEAD/" + entry.names[0];
+    }
+
   function findRepoHomeNavBars() {
     const bars = [];
     const seen = new Set();
@@ -4778,11 +5293,25 @@
     //    需扫整个 body；页脚与自身 dock 已排除，面板项由去重收敕
     document.querySelectorAll("nav").forEach(addBar);
 
-    // 仅保留含 More 触发器或导航链接的条形栏
-    return bars.filter((bar) => {
-      if (findMoreTrigger(bar)) return true;
-      return bar.querySelector("a[href]") !== null;
-    });
+    // 仅保留含 More 触发器或导航链接的条形栏。外显锚点数 ≤1 的 nav 也
+    // 保留：新版权限/偏好头部在窄视口可能把几乎全部项收进 More，外显
+    // 项极少但正是需要收割的栏。
+    // 窄视口专用 chrome（GitHub show-whenNarrow 工具类，仓库头部内容区
+    // 用它渲染窄屏版仓库条：计数 tab 快捷片 + "⋯" 元数据 kebab）整体
+    // 排除 —— canonical 导航仍在 DOM 中（CSS 控制显隐，直扫不过滤 CSS
+    // 可见性），索引这份窄屏副本只会得到重复 tab（Issues/Pull requests/
+    // Security and quality 计数项两份）与 stars/forks/... 元数据项。
+    // 全部 nav 都被排除时回退为不过滤（防过度排除导致 dock 消失）。
+    const eligible = (allowNarrowChrome) =>
+      bars.filter((bar) => {
+        if (!allowNarrowChrome && bar.closest("[class*='show-whenNarrow']")) {
+          return false;
+        }
+        if (findMoreTrigger(bar)) return true;
+        return bar.querySelectorAll("a[href]").length >= 1;
+      });
+    const filtered = eligible(false);
+    return filtered.length ? filtered : eligible(true);
   }
 
   function navDockSignature(items) {
@@ -4890,6 +5419,12 @@
     const title = document.createElement("span");
     title.className = "mgga-nav-dock-header-title";
     title.textContent = i18n.t("mobileNavDock");
+    // 脚本版本号（与设置面板一致）
+    const verSpan = document.createElement("span");
+    verSpan.className = "mgga-nav-dock-header-version";
+    verSpan.textContent =
+      "v" + (typeof GM_info !== "undefined" ? GM_info.script.version : "?");
+    verSpan.title = "Make-GitHub-Great-Again";
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "mgga-nav-dock-close";
@@ -4902,11 +5437,32 @@
       setNavDockExpanded(false);
     });
     header.appendChild(title);
+    header.appendChild(verSpan);
     header.appendChild(closeBtn);
     panel.appendChild(header);
 
     const frag = document.createDocumentFragment();
+    let lastBarKey = null;
+    let isFirst = true;
     items.forEach((item) => {
+      // 跨栏插入轻微分割线（首个条目前不加）
+      const barKey = item.barKey || "";
+      if (!isFirst && lastBarKey !== null && barKey && barKey !== lastBarKey) {
+        const divider = document.createElement("div");
+        divider.className = "mgga-nav-dock-divider";
+        divider.setAttribute("data-mgga-mutation-guard", "1");
+        const barLabel = item.barLabel || "";
+        if (barLabel) {
+          const cap = document.createElement("span");
+          cap.className = "mgga-nav-dock-divider-caption";
+          cap.textContent = barLabel;
+          divider.appendChild(cap);
+        }
+        frag.appendChild(divider);
+      }
+      lastBarKey = barKey || lastBarKey;
+      isFirst = false;
+
       // 优先整体复用原控件（含图标与原生计数器胶囊），仅无源锚点时手工绘制
       const reused = collectNavDockOriginalAnchor(item);
       if (reused) {
@@ -5072,38 +5628,141 @@
       // 不依赖全局头部 nav：移动端可能无头部 nav 元素，直接扫描所有导航条形栏
       const navBars = findRepoHomeNavBars();
 
-      // 按栏收割 More 下拉项，并按栏归位排序（溢出项紧跟本栏可见项之后）。
-      // 缓存键 = 路径 + 视口宽度桶：桌面切移动端调试时 GitHub 会把溢出项
-      // 挪进 More（可见项减少），桶变化触发重收割，面板不缩水。
-      // 注意：空收割不作为有效缓存 —— React 注水前可能扫不到触发器。
-      const cacheKey = location.pathname + "#" + navDockViewportBucket();
+      // === 一次性收割会话 ===
+      // 用户语义：每次进入仓库页/刷新时只收割一次。会话键 = loadRun 序号 +
+      // 路径 + 视口桶；loadRun 序号仅在进入/刷新/SPA 跨路径时递增，因此
+      // 视口变化（桌面拖 Responsive、缩放）沿用同一会话 —— 面板与收割产物
+      // 完全不变，从根上杜绝重排流里的反复点击。
+      const cacheKey = navDockLoadRunSeq + "#" + location.pathname;
+      const prev = navDockHarvestSession;
+      const session =
+        prev && prev.key === cacheKey
+          ? prev
+          : {
+              key: cacheKey,
+              clickState: new WeakMap(),
+              byBar: null,
+              clickTotal: 0,
+            };
+      if (session !== prev) {
+        navDockHarvestSession = session;
+      }
+      /**
+       * 每触发器元素状态机：每个元素至多点击 2 次 —— 首次点击后为空
+       * （常见于切 Responsive 瞬间 React 仍在重渲染、菜单未挂载的竞态）
+       * 允许 2.5s 后重试一次；成功或有两次点击后该元素永不再点。
+       * 按元素记录使重渲染/重排重建的新节点获得收割机会，同一元素
+       * 绝不无限重复点击（防振荡根源）。全局 12 次上限兜底。
+       */
+      const canClickTrigger = (trigger) => {
+        if (session.clickTotal >= NAV_DOCK_SESSION_MAX_CLICKS) return false;
+        const st = session.clickState.get(trigger);
+        if (!st) return true;
+        if (st.ok) return false;
+        if (st.count >= 2) return false;
+        // 空结果后的唯一重试：延迟 ≥2.5s（等 React 重渲染/菜单挂载完成）
+        return Date.now() - st.at >= 2500;
+      };
+      const recordClick = (trigger, ok) => {
+        const st = session.clickState.get(trigger) || { count: 0 };
+        st.count++;
+        st.at = Date.now();
+        st.ok = ok;
+        session.clickState.set(trigger, st);
+        session.clickTotal++;
+        console.info(
+          `[MGGA] nav dock: harvest click #${st.count} ${
+            ok ? "ok" : "empty"
+          } on "${(normalizedText(trigger) || trigger.getAttribute("aria-label") || "?").slice(0, 24)}"`
+        );
+      };
+
+      // 收割缓存：会话缓存命中即只读复用（含视口变化重建）；未命中则本轮
+      // 直扫 + 对"从未点击过"的触发器逐栏收割（每元素至多一次）
       let harvestedByBar = null;
-      if (
-        navDockHarvestCache &&
-        navDockHarvestCache.key === cacheKey &&
-        navDockHarvestCache.byBar
-      ) {
-        harvestedByBar = navDockHarvestCache.byBar;
+      if (session.byBar) {
+        harvestedByBar = session.byBar;
       } else {
         harvestedByBar = new Map();
         for (const bar of navBars) {
           const trigger = findMoreTrigger(bar);
-          if (!trigger) continue;
+          // 结构自诊断：真实登录态问题排查用（显示每栏名、外显锚点数、
+          // 触发器识别结果）。定位后可整体移除。
+          const visAnchors = Array.from(bar.querySelectorAll("a[href]")).filter(
+            (a) => a.offsetParent !== null || a.getClientRects().length > 0
+          ).length;
+          console.info(
+            `[MGGA] scan "${(bar.getAttribute("aria-label") || navBarKey(bar)).slice(0, 28)}" vis=${visAnchors} trig=${trigger ? (normalizedText(trigger) || trigger.getAttribute("aria-label") || "icon-btn").slice(0, 18) : "null"}`
+          );
+          if (!trigger) {
+            // 本轮扫不到触发器（注水未完成）：留给补收轮
+            continue;
+          }
+          if (!canClickTrigger(trigger)) continue;
           let menuItems = [];
           try {
-            menuItems = extractMenuItems(findMoreMenu(trigger));
+            menuItems = extractMenuItems(findMoreMenu(trigger, false));
             if (!menuItems.length) {
               menuItems = await harvestMoreItems(trigger);
+              recordClick(trigger, menuItems.length > 0);
             }
           } catch (err) {
             console.warn("[MGGA] nav dock: harvest failed for one bar:", err);
+            recordClick(trigger, false);
           }
           if (menuItems.length) {
             harvestedByBar.set(navBarKey(bar), menuItems);
           }
         }
-        if (harvestedByBar.size) {
-          navDockHarvestCache = { key: cacheKey, byBar: harvestedByBar };
+        // 有任一成功收割才会话结果定稿；空结果（注水未完成）不定稿，
+        // 留给后续轮次重扫，避免"空缓存锁死 → 悬浮球消失"。
+        if (harvestedByBar.size) session.byBar = harvestedByBar;
+      }
+      // 待补触发器每轮重算（无论缓存是否命中）：晚出现的触发器
+      // （如切 Responsive 后 react-partial 重渲染出的头部 More）即使
+      // 会话产物已定稿，也要在这里获得收割机会 —— 定稿的是"收割产物"，
+      // 不是"收割机会"。（曾因缓存命中分支不计算 missedBars 导致晚现
+      // 触发器永不被点击，v2026.10.8 前实证。）
+      const missedBars = navBars.filter((bar) => {
+        if (harvestedByBar.has(navBarKey(bar))) return false;
+        const t = findMoreTrigger(bar);
+        return t && canClickTrigger(t);
+      });
+
+      // 签名短路（收割后、补收前）：本轮收割结果与现有面板一致、且没有
+      // 待补收栏时直接返回，不再进入补收/增量补扫 —— 杜绝"任何 body 变更
+      // 都重扫并重新点击 More"的无限重试循环（曾引发模拟移动端时页面在
+      // 顶部与 README 区之间振荡）。有待补栏时不短路，让补收继续进行。
+      const existingEarly = document.getElementById(NAV_DOCK_ID);
+      const earlySignature = navDockSignature(
+        collectRepoHomeNavItems(navBars, harvestedByBar)
+      );
+      if (
+        existingEarly &&
+        !missedBars.length &&
+        existingEarly.dataset.mggaNavDockSig === earlySignature &&
+        existingEarly.dataset.mggaNavDockVer === NAV_DOCK_STRUCT_VER
+      ) {
+        return;
+      }
+
+      // 补收：状态机内还有"从未点击过"余量的触发器（每元素至多点击一次）。
+      // 全部元素点击过后本分支自然失效，不再产生任何点击。
+      if (missedBars.length) {
+        const retryBars = missedBars.splice(0, 2);
+        for (const bar of retryBars) {
+          const trigger = findMoreTrigger(bar);
+          if (!trigger || !canClickTrigger(trigger)) continue;
+          try {
+            const menuItems = await harvestMoreItems(trigger);
+            recordClick(trigger, menuItems.length > 0);
+            if (menuItems.length) {
+              harvestedByBar.set(navBarKey(bar), menuItems);
+              session.byBar = harvestedByBar;
+            }
+          } catch (_) {
+            recordClick(trigger, false);
+          }
         }
       }
 
@@ -5136,7 +5795,7 @@
       const existing = document.getElementById(NAV_DOCK_ID);
       const signature = navDockSignature(items);
       // 旧版结构（无标题栏/过渡类）与新结构不兼容，通过结构版本号强制重建一次
-      const STRUCT_VER = "4";
+      const STRUCT_VER = NAV_DOCK_STRUCT_VER;
       if (
         existing &&
         existing.dataset.mggaNavDockSig === signature &&
@@ -5153,6 +5812,7 @@
       const freshPanel = buildNavDockPanel(items);
       freshPanel.dataset.mggaNavDockSig = signature;
       freshPanel.dataset.mggaNavDockVer = STRUCT_VER;
+      freshPanel.dataset.mggaNavDockCount = String(items.length);
       const freshFab = buildNavDockFab();
       bindNavDockFab(freshFab, freshPanel);
       updateNavDockFabBadge(freshFab, items.length);
@@ -5163,6 +5823,10 @@
       document.body.appendChild(freshFab);
     } finally {
       navDockBuilding = false;
+      // 构建期间新注入的触发器(如切 Responsive 后 react-partial 重渲染出的
+      // 头部 More)会被 navDockBuilding 守卫吞掉:构建结束后补一轮调度,
+      // 由状态机判定是否还需要收割(每元素至多 2 次)。
+      scheduleNavDockViewportCheck();
     }
   }
 
@@ -5174,7 +5838,14 @@
         navDockObserver.disconnect();
         navDockObserver = null;
       }
+      navDockLastBuiltPath = null;
       return;
+    }
+    // 进入仓库页/刷新/SPA 跨路径：递增 loadRun 序号 —— 视口变化重建
+    // （MutationObserver 去抖后再次进入本函数）沿用同一 loadRun，会话不变。
+    if (navDockLastBuiltPath !== location.pathname) {
+      navDockLoadRunSeq++;
+      navDockLastBuiltPath = location.pathname;
     }
     try {
       await buildNavDock();

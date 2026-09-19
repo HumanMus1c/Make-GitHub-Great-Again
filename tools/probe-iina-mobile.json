@@ -1,0 +1,304 @@
+{
+  "url": "https://github.com/iina/iina",
+  "vw": 400,
+  "dockPresent": true,
+  "dockLinks": [
+    {
+      "label": "Code",
+      "href": "/iina/iina"
+    },
+    {
+      "label": "Issues 1.8k",
+      "href": "/iina/iina/issues"
+    },
+    {
+      "label": "Pull requests 98",
+      "href": "/iina/iina/pulls"
+    },
+    {
+      "label": "Discussions",
+      "href": "/iina/iina/discussions"
+    },
+    {
+      "label": "Actions",
+      "href": "/iina/iina/actions"
+    },
+    {
+      "label": "Wiki",
+      "href": "/iina/iina/wiki"
+    },
+    {
+      "label": "Security and quality 1",
+      "href": "/iina/iina/security"
+    },
+    {
+      "label": "Insights",
+      "href": "/iina/iina/pulse"
+    },
+    {
+      "label": "README",
+      "href": "/iina/iina"
+    },
+    {
+      "label": "Contributing",
+      "href": "/iina/iina/blob/develop/CONTRIBUTING.md"
+    },
+    {
+      "label": "License",
+      "href": "/iina/iina/blob/develop/LICENSE"
+    }
+  ],
+  "dockLabels": [
+    "Code",
+    "Issues 1.8k",
+    "Pull requests 98",
+    "Discussions",
+    "Actions",
+    "Wiki",
+    "Security and quality 1",
+    "Insights",
+    "README",
+    "Contributing",
+    "License"
+  ],
+  "bars": [
+    {
+      "aria": "Global",
+      "cls": "MarketingNavigation-module__nav__W0KYY",
+      "inNarrow": false,
+      "anchorCount": 61,
+      "anchors": [
+        {
+          "label": "GitHub CopilotWrite better code with AI",
+          "href": "https://github.com/features/copilot"
+        },
+        {
+          "label": "GitHub Copilot appDirect agents from iss",
+          "href": "https://github.com/features/ai/github-app"
+        },
+        {
+          "label": "MCP RegistryIntegrate external tools",
+          "href": "https://github.com/mcp"
+        },
+        {
+          "label": "ActionsAutomate any workflow",
+          "href": "https://github.com/features/actions"
+        },
+        {
+          "label": "CodespacesInstant dev environments",
+          "href": "https://github.com/features/codespaces"
+        },
+        {
+          "label": "IssuesPlan and track work",
+          "href": "https://github.com/features/issues"
+        },
+        {
+          "label": "Code ReviewManage code changes",
+          "href": "https://github.com/features/code-review"
+        },
+        {
+          "label": "Code QualityEnforce quality at merge",
+          "href": "https://github.com/features/code-quality"
+        },
+        {
+          "label": "GitHub Advanced SecurityFind and fix vul",
+          "href": "https://github.com/security/advanced-security"
+        },
+        {
+          "label": "Code securitySecure your code as you bui",
+          "href": "https://github.com/security/advanced-security/code-security"
+        },
+        {
+          "label": "Secret protectionStop leaks before they ",
+          "href": "https://github.com/security/advanced-security/secret-protection"
+        },
+        {
+          "label": "Why GitHub",
+          "href": "https://github.com/why-github"
+        },
+        {
+          "label": "Documentation",
+          "href": "https://docs.github.com"
+        },
+        {
+          "label": "Blog",
+          "href": "https://github.blog"
+        },
+        {
+          "label": "Changelog",
+          "href": "https://github.blog/changelog"
+        },
+        {
+          "label": "Marketplace",
+          "href": "https://github.com/marketplace"
+        },
+        {
+          "label": "View all features",
+          "href": "https://github.com/features"
+        },
+        {
+          "label": "Enterprises",
+          "href": "https://github.com/enterprise"
+        },
+        {
+          "label": "Small and medium teams",
+          "href": "https://github.com/team"
+        },
+        {
+          "label": "Startups",
+          "href": "https://github.com/enterprise/startups"
+        },
+        {
+          "label": "Nonprofits",
+          "href": "https://github.com/solutions/industry/nonprofits"
+        },
+        {
+          "label": "App Modernization",
+          "href": "https://github.com/solutions/use-case/app-modernization"
+        },
+        {
+          "label": "DevSecOps",
+          "href": "https://github.com/solutions/use-case/devsecops"
+        },
+        {
+          "label": "DevOps",
+          "href": "https://github.com/solutions/use-case/devops"
+        }
+      ]
+    },
+    {
+      "aria": "Repository",
+      "cls": "js-repo-nav js-sidenav-container-pjax js-responsive-underlinenav overflow-hidden",
+      "inNarrow": false,
+      "anchorCount": 16,
+      "anchors": [
+        {
+          "label": "Code",
+          "href": "/iina/iina"
+        },
+        {
+          "label": "Issues 1.8k",
+          "href": "/iina/iina/issues"
+        },
+        {
+          "label": "Pull requests 98",
+          "href": "/iina/iina/pulls"
+        },
+        {
+          "label": "Discussions",
+          "href": "/iina/iina/discussions"
+        },
+        {
+          "label": "Actions",
+          "href": "/iina/iina/actions"
+        },
+        {
+          "label": "Wiki",
+          "href": "/iina/iina/wiki"
+        },
+        {
+          "label": "Security and quality 1",
+          "href": "/iina/iina/security"
+        },
+        {
+          "label": "Insights",
+          "href": "/iina/iina/pulse"
+        },
+        {
+          "label": "Code",
+          "href": "/iina/iina"
+        },
+        {
+          "label": "Issues",
+          "href": "/iina/iina/issues"
+        },
+        {
+          "label": "Pull requests",
+          "href": "/iina/iina/pulls"
+        },
+        {
+          "label": "Discussions",
+          "href": "/iina/iina/discussions"
+        },
+        {
+          "label": "Actions",
+          "href": "/iina/iina/actions"
+        },
+        {
+          "label": "Wiki",
+          "href": "/iina/iina/wiki"
+        },
+        {
+          "label": "Security and quality",
+          "href": "/iina/iina/security"
+        },
+        {
+          "label": "Insights",
+          "href": "/iina/iina/pulse"
+        }
+      ]
+    },
+    {
+      "aria": "Repository files",
+      "cls": "prc-components-UnderlineWrapper-eT-Yj prc-UnderlineNav-UnderlineWrapper-GWONT Ov",
+      "inNarrow": false,
+      "anchorCount": 3,
+      "anchors": [
+        {
+          "label": "README",
+          "href": "#"
+        },
+        {
+          "label": "Contributing",
+          "href": "#"
+        },
+        {
+          "label": "License",
+          "href": "#"
+        }
+      ]
+    },
+    {
+      "aria": "Footer",
+      "cls": "",
+      "inNarrow": false,
+      "anchorCount": 7,
+      "anchors": [
+        {
+          "label": "Terms",
+          "href": "https://docs.github.com/site-policy/github-terms/github-terms-of-service"
+        },
+        {
+          "label": "Privacy",
+          "href": "https://docs.github.com/site-policy/privacy-policies/github-privacy-statement"
+        },
+        {
+          "label": "Security",
+          "href": "https://github.com/security"
+        },
+        {
+          "label": "Status",
+          "href": "https://www.githubstatus.com/"
+        },
+        {
+          "label": "Community",
+          "href": "https://github.community/"
+        },
+        {
+          "label": "Docs",
+          "href": "https://docs.github.com/"
+        },
+        {
+          "label": "Contact",
+          "href": "https://support.github.com?tags=dotcom-footer"
+        }
+      ]
+    }
+  ],
+  "scanLogs": [
+    "[MGGA] scan \"Global\" vis=61 trig=Toggle navigation",
+    "[MGGA] scan \"Repository\" vis=8 trig=Learn more about S",
+    "[MGGA] scan \"Repository files\" vis=3 trig=More items"
+  ],
+  "mggaErrors": []
+}

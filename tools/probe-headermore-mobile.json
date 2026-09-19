@@ -1,0 +1,158 @@
+{
+  "url": "https://github.com/react/react",
+  "vw": 400,
+  "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+  "navs": [
+    {
+      "aria": "Global",
+      "cls": "MarketingNavigation-module__nav__W0KYY",
+      "inHeaderWrapper": true,
+      "anchors": 61,
+      "visibleAnchors": 0,
+      "buttons": 5
+    },
+    {
+      "aria": "Repository",
+      "cls": "js-repo-nav js-sidenav-container-pjax js-responsive-underlinenav overflow-hidden Underline",
+      "inHeaderWrapper": false,
+      "anchors": 12,
+      "visibleAnchors": 0,
+      "buttons": 1
+    },
+    {
+      "aria": "Repository files",
+      "cls": "prc-components-UnderlineWrapper-eT-Yj prc-UnderlineNav-UnderlineWrapper-GWONT OverviewRepo",
+      "inHeaderWrapper": false,
+      "anchors": 5,
+      "visibleAnchors": 0,
+      "buttons": 1
+    },
+    {
+      "aria": "Footer",
+      "cls": "",
+      "inHeaderWrapper": false,
+      "anchors": 7,
+      "visibleAnchors": 0,
+      "buttons": 2
+    }
+  ],
+  "headerNavFound": true,
+  "headerNavAria": "Global",
+  "headerNavHtmlHead": "<nav class=\"MarketingNavigation-module__nav__W0KYY\" aria-label=\"Global\"><ul class=\"MarketingNavigation-module__list__tFbMb\"><li><div class=\"NavDropdown-module__container__l2YeI\"><button type=\"button\" class=\"NavDropdown-module__button__PEHWX\" aria-expanded=\"false\" aria-controls=\"_R_nd_\">Platform<svg data-component=\"Octicon\" aria-hidden=\"true\" focusable=\"false\" class=\"octicon octicon-triangle-right NavDropdown-module__buttonIcon__Tkl8_\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"currentColor\" display=\"inline-block\" overflow=\"visible\" style=\"vertical-align:text-bottom\"><path d=\"m6.427 4.427 3.396 3.396a.25.25 0 0 1 0 .354l-3.396 3.396A.25.25 0 0 1 6 11.396V4.604a.25.25 0 0 1 .427-.177Z\"></path></svg></button><div id=\"_R_nd_\" class=\"NavDropdown-module__dropdown__xm1jd\"><ul class=\"NavDropdown-module__list__zuCgG\"><li><div class=\"NavGroup-module__group__W8SqJ\"><span class=\"Primer_Brand__Text-module__Text___XeGJJ Primer_Brand__Text-module__Text-font--monospace___QXHDQ Primer_Brand__Text-module__Text--muted___rE6mh Primer_Brand__Text-module__Text--100___B2ueX Primer_Brand__Text-module__Text--weight-medium___qJKf_ NavGroup-module__title__Wzxz2\" id=\"_R_5knd_\">AI CODE CREATION</span><ul class=\"NavGroup-module__list__UCOFy\" aria-labelledby=\"_R_5knd_\"><li><a class=\"Primer_Brand__Link-module__Link___lF11y Primer_Brand__Link-module__Link--default___VRVW0 NavLink-module__link__EG3d4\" href=\"https://github.com/features/copilot\" data-analytics-event=\"{&quot;action&quot;:&quot;github_copilot&quot;,&quot;tag&quot;:&quot;link&quot;,&quot;context&quot;:&quot;platform&quot;,&quot;location&quot;:&quot;navbar&quot;,&quot;label&quot;:&quot;github_copilot_link_platform_navbar&quot;}\"><span class=\"Primer_Brand__Text-module__Text___XeGJJ Primer_Brand__Text-module__Text-font--mona-sans___a8XJD Primer_Brand__Text-module__Text--default___GhPh_ Primer_Brand__Text-module__Text--200____P1wy Primer_Brand__Text-module__Text--antialiased___TYoXS Primer_Brand__Link-module__Link--label___jM8Ty\"><span class=\"Primer_Brand__Text-module__Text___XeGJJ Primer_Brand__Text-module__Text-font--mona-sans___a8XJD Primer_Brand__Text-module__Text--default___GhPh_ Primer_Brand__Text-module__Text--200____P1wy Primer_Brand__Text-module__Text--antialiased___TYoXS Primer_Brand__Text-module__Text--weight-medium___qJKf_ NavLink-module__title__Q7t0p\"><svg data-component=\"Octicon\" aria-hidden=\"true\" focusable=\"false\" class=\"octicon octicon-copilot NavLink-module__icon__ltGNM\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"currentColor\" display=\"inline-block\" overflow=\"visible\" style=\"vertical-align:text-botto",
+  "headerNavButtons": [
+    {
+      "tag": "BUTTON",
+      "text": "Platform",
+      "ariaLabel": null,
+      "haspopup": null,
+      "expanded": "false",
+      "controls": "_R_nd_",
+      "visible": true,
+      "w": 344
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Solutions",
+      "ariaLabel": null,
+      "haspopup": null,
+      "expanded": "false",
+      "controls": "_R_17d_",
+      "visible": true,
+      "w": 344
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Resources",
+      "ariaLabel": null,
+      "haspopup": null,
+      "expanded": "false",
+      "controls": "_R_1nd_",
+      "visible": true,
+      "w": 344
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Open Source",
+      "ariaLabel": null,
+      "haspopup": null,
+      "expanded": "false",
+      "controls": "_R_27d_",
+      "visible": true,
+      "w": 344
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Enterprise",
+      "ariaLabel": null,
+      "haspopup": null,
+      "expanded": "false",
+      "controls": "_R_2nd_",
+      "visible": true,
+      "w": 344
+    }
+  ],
+  "scriptTrigger": null,
+  "moreish": [],
+  "dockPresent": true,
+  "fabPresent": true,
+  "dockLinks": [
+    {
+      "label": "Code",
+      "href": "/react/react"
+    },
+    {
+      "label": "Issues 854",
+      "href": "/react/react/issues"
+    },
+    {
+      "label": "Pull requests 524",
+      "href": "/react/react/pulls"
+    },
+    {
+      "label": "Actions",
+      "href": "/react/react/actions"
+    },
+    {
+      "label": "Security and quality 8",
+      "href": "/react/react/security"
+    },
+    {
+      "label": "Insights",
+      "href": "/react/react/pulse"
+    },
+    {
+      "label": "README",
+      "href": "/react/react"
+    },
+    {
+      "label": "Code of conduct",
+      "href": "/react/react/blob/main/CODE_OF_CONDUCT.md"
+    },
+    {
+      "label": "Contributing",
+      "href": "/react/react/blob/main/CONTRIBUTING.md"
+    },
+    {
+      "label": "MIT license",
+      "href": "/react/react/blob/main/LICENSE"
+    },
+    {
+      "label": "Security",
+      "href": "/react/react/blob/main/SECURITY.md"
+    }
+  ],
+  "dockLabels": [
+    "Code",
+    "Issues 854",
+    "Pull requests 524",
+    "Actions",
+    "Security and quality 8",
+    "Insights",
+    "README",
+    "Code of conduct",
+    "Contributing",
+    "MIT license",
+    "Security"
+  ],
+  "mggaErrors": []
+}
