@@ -17,6 +17,12 @@
   各栏首点即成功 → 别名根因(旧条 "Security" vs 新条 "Security and
   quality");修复:目的地去重(归一路径相同只留首个,当前页路径豁免
   Code/README),与同名去重构成双保险。
+- 10.15→10.16(f66cd4b):仍重复 → 两个残余洞:绝对 URL vs 相对路径
+  归一不等;当前页豁免被选中 tab 别名副本(# + aria-current)利用。
+  修复:URL 解析归一(同源才合并)+ 豁免白名单化(code/readme)。
+- 日志判读经验:MGGA 自身报错会带 [MGGA] 前缀;穿越 harvestMoreItems
+  await 帧的长堆栈若源自 analytics/stats/collector 等第三方路径,是
+  广告拦截器 ERR_BLOCKED_BY_CLIENT 的异步归因,不要误判为 MGGA 错误。
 - 关键取证手法:控制台日志行号可指纹版本(5634/5655=10.13,5626/5647
   =10.11,5653/5674=10.12);新探针 tools/verify-dup-counter-fuse.js
   注入预挂载 aria-hidden 菜单直接走收割路径,金丝雀项验证路径真实执行

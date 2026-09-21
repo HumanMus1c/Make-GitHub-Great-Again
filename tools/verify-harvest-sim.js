@@ -58,21 +58,39 @@ function grabFn(name) {
 }
 
 const code = [
+  // harvestMoreItems 的滚动锁定是一个引用计数的模块级状态机，
+  // 逐函数抽取拿不到它的状态变量，需显式补一段（2026-09-21 补）
+  `const NAV_DOCK_SCROLL_LOCK_STYLE_ID = "mgga-nav-dock-scroll-lock-style";
+   let navDockScrollLockCount = 0;
+   let navDockScrollSnapY = 0;
+   let navDockScrollSnapHandler = null;
+   // unlockPageScrollForHarvest 的回弹要读"回弹抑制截止时刻"（用户主动定位时置位）；
+   // 漏声明会让 50ms 后的回弹回调抛 ReferenceError（2026-09-21 补）
+   let navDockScrollRebounceSuppressUntil = 0;`,
   grabFn("normalizedText"),
+  // extractMenuItems 内部用 navDockAnchorLabel 剥离计数器后取文本，
+  // 漏抓会让仿真实例抛 ReferenceError（2026-09-21 补）
+  grabFn("navDockAnchorLabel"),
   grabFn("isMoreLabel"),
   grabFn("isVisibleMenu"),
   grabFn("findMoreTrigger"),
   grabFn("findMoreMenu"),
   grabFn("extractMenuItems"),
+  grabFn("lockPageScrollForHarvest"),
+  grabFn("unlockPageScrollForHarvest"),
+  // harvestMoreItems/Locked 的诊断分支会调用 navDockDescribeNode；
+  // 按名抽取的沙箱里若缺它，带 diag 的调用路径会 ReferenceError（2026-09-21 补）
+  grabFn("navDockDescribeNode"),
+  grabFn("harvestMoreItemsLocked"),
   grabFn("harvestMoreItems"),
 ].join("\n");
 
 const runner = new window.Function(
-  "document", "window", "HTMLDetailsElement", "HTMLAnchorElement", "KeyboardEvent",
+  "document", "window", "HTMLElement", "HTMLDetailsElement", "HTMLAnchorElement", "KeyboardEvent",
   code + "\nreturn { findMoreTrigger, findMoreMenu, isVisibleMenu, extractMenuItems, harvestMoreItems };"
 );
 const api = runner(
-  document, window, window.HTMLDetailsElement, window.HTMLAnchorElement, window.KeyboardEvent
+  document, window, window.HTMLElement, window.HTMLDetailsElement, window.HTMLAnchorElement, window.KeyboardEvent
 );
 
 // isVisibleMenu 需要真实布局:jsdom 无布局,getBoundingClientRect 恒为 0
@@ -81,6 +99,8 @@ const origRect = window.Element.prototype.getBoundingClientRect;
 function patchRect(el, w, h) {
   el.getBoundingClientRect = () => ({ width: w, height: h, top: 0, left: 0, right: w, bottom: h });
 }
+// jsdom 未实现 scrollTo，滚动锁定/解锁会刷 "Not implemented" 噪音，直接打桩
+window.scrollTo = () => {};
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -133,8 +153,15 @@ function check(name, cond) {
 
   // 场景4:harvestMoreItems 全流程(按钮未展开 → 点击 → 等 portal)
   filesMore.setAttribute("aria-expanded", "false");
-  const harvested = await api.harvestMoreItems(filesMore);
+  const harvestDiag = {};
+  const harvested = await api.harvestMoreItems(filesMore, harvestDiag);
   check("harvestMoreItems returns 2 items", harvested.length === 2);
+  // 诊断出参：必须如实记录"确实点过"（此场景按钮未展开 ⇒ clicked=true）
+  check("harvest diag records clicked=true", harvestDiag.clicked === true);
+  check(
+    "harvest diag records menu container",
+    typeof harvestDiag.menu === "string" && harvestDiag.menu.length > 0
+  );
 
   // 场景5:aria-controls 指向隐藏 portal 时,预检允许所有权菜单但收割时只收可见
   const tabMore = document.getElementById("moreBtn");

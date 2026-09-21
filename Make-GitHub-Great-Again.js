@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name                    Make-GitHub-Great-Again
-// @name:en                 Make-GitHub-Great-Again
+// @name:en                 Make GitHub Great Again
 // @namespace               https://github.com
-// @version 2026.10.16
+// @version                 2026.10.23
 // @description             为 Release 的项目添加背景色，识别文件系统平台类型，以及高亮自定义关键词；修正移动端仓库页右侧空白列，新增移动端左侧悬浮导航
 // @description:en          Add background colors to each Release Asset, identify the file system platform type and custom keywords highlighter. Fix empty right column on mobile.
 // @author                  https://github.com/HumanMus1c
@@ -11,7 +11,6 @@
 // @grant                   GM_registerMenuCommand
 // @grant                   GM_getValue
 // @grant                   GM_setValue
-// @grant                   unsafeWindow
 // @license                 MIT
 // ==/UserScript==
 
@@ -60,13 +59,13 @@
         restore: { zh: "恢复", en: "Restore" },
         deleteRule: { zh: "删除", en: "Delete" },
         mobileFix: { zh: "修正仓库头按钮溢出", en: "Fix repo header button overflow" },
-        mobileNavDock: { zh: "移动端左侧悬浮导航", en: "Mobile floating nav dock" },
-        mobileNavDockMenuToggle: {
+        navDock: { zh: "左侧悬浮导航", en: "Floating nav dock" },
+        navDockMenuToggle: {
           zh: "展开/收起悬浮导航",
           en: "Expand/Collapse nav dock",
         },
-        mobileNavDockExpand: { zh: "展开悬浮导航", en: "Expand nav dock" },
-        mobileNavDockCollapse: { zh: "收起悬浮导航", en: "Collapse nav dock" },
+        navDockExpand: { zh: "展开悬浮导航", en: "Expand nav dock" },
+        navDockCollapse: { zh: "收起悬浮导航", en: "Collapse nav dock" },
         navDockUnavailable: {
           zh: "当前页面不是仓库主页，悬浮导航仅在 用户名/仓库 主页可用",
           en: "This page is not a repository home; the nav dock only works on owner/repo home pages",
@@ -99,6 +98,235 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  // === 脚本版本号单一来源 ===
+  // 元信息与 UI 展示共用，避免各处硬编码兜底值与 @version 脱节
+  const FALLBACK_VERSION = "unknown";
+  function getScriptVersion() {
+    try {
+      if (
+        typeof GM_info !== "undefined" &&
+        GM_info &&
+        GM_info.script &&
+        GM_info.script.version
+      ) {
+        return String(GM_info.script.version);
+      }
+    } catch (_) {
+      /* GM_info 不可用时走兜底 */
+    }
+    return FALLBACK_VERSION;
+  }
+
+  // === 颜色工具区（模块级单一实现）===
+  // 历史上这些转换在设置面板/高亮/确认保存处各写了一份，逐一收敛至此。
+  // 全部为纯函数，无副作用，供设置面板、关键词高亮与图标算法共用。
+
+  /** 数值 RGB → "#RRGGBB"（大写入参需为 0-255 整数） */
+  function rgbToHex(r, g, b) {
+    return (
+      "#" +
+      [r, g, b]
+        .map((x) => {
+          const hex = Number(x).toString(16);
+          return hex.length === 1 ? "0" + hex : hex;
+        })
+        .join("")
+        .toUpperCase()
+    );
+  }
+
+  /** "#RRGGBB" / "#RGB" → { r, g, b }；解析失败返回全 0 */
+  function hexToRgb(hex) {
+    let r = 0,
+      g = 0,
+      b = 0;
+    const h = String(hex || "");
+    if (h.length === 4) {
+      r = parseInt(h[1] + h[1], 16);
+      g = parseInt(h[2] + h[2], 16);
+      b = parseInt(h[3] + h[3], 16);
+    } else if (h.length === 7) {
+      r = parseInt(h.substring(1, 3), 16);
+      g = parseInt(h.substring(3, 5), 16);
+      b = parseInt(h.substring(5, 7), 16);
+    }
+    return { r, g, b };
+  }
+
+  /**
+   * CSS 颜色字符串 → "#RRGGBB"
+   * 来源可能是元素 style（已是 HEX）或 getComputedStyle（"rgb(r, g, b)"）。
+   * fallback 用于空值/transparent，各调用点语义不同故显式传入。
+   */
+  function cssColorToHex(color, fallback = "") {
+    if (!color || color === "transparent") return fallback;
+    if (color.startsWith("#")) return color;
+    const m = color.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+    if (m) {
+      return rgbToHex(parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10));
+    }
+    return color;
+  }
+
+  /** HSL(0-360, 0-100, 0-100) → "#RRGGBB" */
+  function hslToHex(h, s, l) {
+    h = parseInt(h, 10);
+    s = parseInt(s, 10) / 100;
+    l = parseInt(l, 10) / 100;
+
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const hh = h / 60;
+    const x = c * (1 - Math.abs((hh % 2) - 1));
+    let r = 0,
+      g = 0,
+      b = 0;
+
+    if (hh <= 1) {
+      r = c; g = x;
+    } else if (hh <= 2) {
+      r = x; g = c;
+    } else if (hh <= 3) {
+      g = c; b = x;
+    } else if (hh <= 4) {
+      g = x; b = c;
+    } else if (hh <= 5) {
+      r = x; b = c;
+    } else {
+      r = c; b = x;
+    }
+
+    const m = l - c / 2;
+    const toHex = (n) => {
+      const hex = Math.round((n + m) * 255).toString(16);
+      return hex.length === 1 ? "0" + hex : hex;
+    };
+
+    return "#" + toHex(r) + toHex(g) + toHex(b);
+  }
+
+  /** "#RGB"/"#RRGGBB"/"rgb(...)" → { h:0-360, s:0-100, l:0-100 } */
+  function hexToHSL(color) {
+    let r, g, b;
+    const c = String(color || "");
+
+    if (c.startsWith("#")) {
+      if (c.length === 4) {
+        r = parseInt(c[1] + c[1], 16) / 255;
+        g = parseInt(c[2] + c[2], 16) / 255;
+        b = parseInt(c[3] + c[3], 16) / 255;
+      } else {
+        r = parseInt(c.slice(1, 3), 16) / 255;
+        g = parseInt(c.slice(3, 5), 16) / 255;
+        b = parseInt(c.slice(5, 7), 16) / 255;
+      }
+    } else if (c.startsWith("rgb")) {
+      const match = c.match(/\d+/g);
+      if (match) {
+        r = parseInt(match[0], 10) / 255;
+        g = parseInt(match[1], 10) / 255;
+        b = parseInt(match[2], 10) / 255;
+      }
+    }
+
+    if (isNaN(r) || isNaN(g) || isNaN(b)) {
+      return { h: 0, s: 0, l: 50 };
+    }
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    let h = 0;
+    let s = 0;
+    const l = (max + min) / 2;
+
+    if (max === min) {
+      h = s = 0;
+    } else {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch (max) {
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        case b: h = (r - g) / d + 4; break;
+      }
+      h /= 6;
+    }
+
+    return {
+      h: Math.round(h * 360),
+      s: Math.round(s * 100),
+      l: Math.round(l * 100),
+    };
+  }
+
+  /** RGB(0-255) → { h:0-360, s:0-100, l:0-100 } */
+  function rgbToHSL(r, g, b) {
+    r /= 255;
+    g /= 255;
+    b /= 255;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+
+    if (max === min) {
+      return { h: 0, s: 0, l: Math.round(l * 100) };
+    }
+
+    const d = max - min;
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+    let h;
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+
+    return {
+      h: Math.round(h * 360),
+      s: Math.round(s * 100),
+      l: Math.round(l * 100),
+    };
+  }
+
+  /** HSL(0-360, 0-100, 0-100) → { r, g, b } (0-255) */
+  function hslToRGB(h, s, l) {
+    h = h / 360;
+    s = s / 100;
+    l = l / 100;
+
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1 / 6) return p + (q - p) * 6 * t;
+      if (t < 1 / 2) return q;
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+      return p;
+    };
+
+    let r, g, b;
+    if (s === 0) {
+      r = g = b = l;
+    } else {
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      r = hue2rgb(p, q, h + 1 / 3);
+      g = hue2rgb(p, q, h);
+      b = hue2rgb(p, q, h - 1 / 3);
+    }
+
+    return {
+      r: Math.round(r * 255),
+      g: Math.round(g * 255),
+      b: Math.round(b * 255),
+    };
+  }
+
+  /** 判断十六进制颜色是否偏暗（YIQ 亮度公式） */
+  function isDarkColor(hex) {
+    const { r, g, b } = hexToRgb(hex);
+    const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+    return yiq < 128;
   }
 
   // === 主题关键词颜色缓存（避免高亮函数在每次正则替换中反复 GM_getValue）===
@@ -191,14 +419,19 @@
     const isHoverEnabled = overrides && overrides.toggles ? overrides.toggles.hover : GM_getValue("colorToggleHover", true);
 
     // 动态更新样式
+    // 每条规则同时覆盖主选择器与 data-testid 兜底选择器，改版后仍能上色。
+    // （选择器见 ASSET_SELECTORS；CSS 无法条件判断，故并列书写。）
     styleElement.textContent = `
-            .Box.Box--condensed li.Box-row:nth-child(odd) {
+            .Box.Box--condensed li.Box-row:nth-child(odd),
+            [data-testid="release-assets"] li.Box-row:nth-child(odd) {
                 background-color: ${isOddEnabled ? sanitizeHexColor(colors.oddRowColor, "#f8f9fa") : "transparent"} !important;
             }
-            .Box.Box--condensed li.Box-row:nth-child(even) {
+            .Box.Box--condensed li.Box-row:nth-child(even),
+            [data-testid="release-assets"] li.Box-row:nth-child(even) {
                 background-color: ${isEvenEnabled ? sanitizeHexColor(colors.evenRowColor, "#ffffff") : "transparent"} !important;
             }
-            .Box.Box--condensed li.Box-row:hover {
+            .Box.Box--condensed li.Box-row:hover,
+            [data-testid="release-assets"] li.Box-row:hover {
                 background-color: ${isHoverEnabled ? sanitizeHexColor(colors.hoverColor, "#e9ecef") : "transparent"} !important;
             }
         `;
@@ -405,8 +638,7 @@
 
     // 更新标题
     const title = dialog.querySelector(".color-picker-title");
-    const versionStr =
-      typeof GM_info !== "undefined" ? GM_info.script.version : "4.1";
+    const versionStr = getScriptVersion();
     if (title) {
       const themeLabel = currentTheme === "dark" ? i18n.t("darkTheme") : i18n.t("lightTheme");
       title.innerHTML = `<svg viewBox="0 0 16 16" width="1.1em" height="1.1em" fill="currentColor" style="vertical-align:-0.15em"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg> ${i18n.t("settingsTitle")} <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${versionStr}</span> <span style="font-size: 0.6em; font-weight: normal; opacity: 0.5;">(${themeLabel})</span>`;
@@ -1327,36 +1559,14 @@
         }
     `);
 
-  // 创建颜色选择器对话框
-  function createColorPickerDialog() {
-    // 关键修复：如果对话框已存在，先移除旧的，确保每次打开都是全新的状态和作用域
-    const existingDialog = document.querySelector(".color-picker-dialog");
-    if (existingDialog) {
-      detachViewportAdaptation(existingDialog);
-      existingDialog.remove();
-    }
-
-    // 获取当前主题
-    const currentTheme = getCurrentTheme();
-
-    // 获取当前主题的自定义颜色（如果存在）
-    let customColors = GM_getValue(
-      `customColors${currentTheme.charAt(0).toUpperCase() + currentTheme.slice(1)}`,
-      null,
-    );
-
-    // 如果没有自定义颜色，使用当前主题的默认颜色
-    if (!customColors) {
-      customColors =
-        currentTheme === "dark" ? defaultColorsDark : defaultColorsLight;
-    }
-
-    // 创建新的对话框
-    dialog = document.createElement("div");
-    dialog.className = "color-picker-dialog";
-    dialog.innerHTML = `
+  /**
+   * 设置面板 HTML 模板（纯函数，便于与交互逻辑分离维护）。
+   * 所有插值均已消毒：颜色走 sanitizeHexColor，文案走 i18n 静态字典。
+   */
+  function buildSettingsDialogHTML(customColors) {
+    return `
             <div class="color-picker-header">
-                <h3 class="color-picker-title"><svg viewBox="0 0 16 16" width="1.1em" height="1.1em" fill="currentColor" style="vertical-align:-0.15em"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg> ${i18n.t("settingsTitle")} <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${typeof GM_info !== "undefined" ? GM_info.script.version : "4.1"}</span></h3>
+                <h3 class="color-picker-title"><svg viewBox="0 0 16 16" width="1.1em" height="1.1em" fill="currentColor" style="vertical-align:-0.15em"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg> ${i18n.t("settingsTitle")} <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${getScriptVersion()}</span></h3>
                 <span class="color-picker-close" title="${i18n.t("close")}">&times;</span>
             </div>
             <div class="color-picker-content">
@@ -1400,310 +1610,68 @@
                 </div>
             </div>
         `;
+  }
 
-    document.body.appendChild(dialog);
-
-    // 打开对话框并应用滑入动画
-    openDialog(dialog);
-
-    // 获取元素引用
-    const oddRowColorBtn = dialog.querySelector("#oddRowColorBtn");
-    const evenRowColorBtn = dialog.querySelector("#evenRowColorBtn");
-    const hoverColorBtn = dialog.querySelector("#hoverColorBtn");
-
-    // === 禁用/启用上色功能切换按钮 ===
-    const colorToggleState = {
-      odd: GM_getValue("colorToggleOdd", true),
-      even: GM_getValue("colorToggleEven", true),
-      hover: GM_getValue("colorToggleHover", true),
-    };
-
-    // 实时刷新样式的函数
-    const refreshRealtimeStyles = () => {
-      const rgbToHex = (rgb) => {
-        if (!rgb || rgb === "transparent") return "#000000";
-        if (rgb.startsWith("#")) return rgb;
-        const match = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
-        if (match) {
-          return (
-            "#" +
-            [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])]
-              .map((x) => x.toString(16).padStart(2, "0"))
-              .join("")
-              .toUpperCase()
-          );
-        }
-        return rgb;
-      };
-
-      // 每次刷新都从 DOM 中实时获取最新的按钮引用，确保闭包不会失效
-      const btnOdd = dialog.querySelector("#oddRowColorBtn");
-      const btnEven = dialog.querySelector("#evenRowColorBtn");
-      const btnHover = dialog.querySelector("#hoverColorBtn");
-
-      applyColors({
-        colors: {
-          oddRowColor: rgbToHex(btnOdd ? btnOdd.style.backgroundColor : ""),
-          evenRowColor: rgbToHex(btnEven ? btnEven.style.backgroundColor : ""),
-          hoverColor: rgbToHex(btnHover ? btnHover.style.backgroundColor : ""),
-        },
-        toggles: colorToggleState,
-      });
-    };
-
-    // 初始化 SVG 切换状态
-    const svgToggleBtn = dialog.querySelector("#svgToggleBtn");
-    if (svgToggleBtn) {
-      let isSvgEnabled = GM_getValue("svgEnabled", true);
-
-      // 更新按钮UI的函数
-      const updateSvgBtnUI = (enabled) => {
-        svgToggleBtn.classList.toggle("disabled", !enabled);
-        svgToggleBtn.innerHTML = enabled ? "✓" : "✕";
-        svgToggleBtn.title = enabled ? i18n.t("enabledTitle") : i18n.t("disabledTitle");
-      };
-
-      updateSvgBtnUI(isSvgEnabled);
-
-      svgToggleBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        isSvgEnabled = !isSvgEnabled;
-        GM_setValue("svgEnabled", isSvgEnabled);
-        updateSvgBtnUI(isSvgEnabled);
-        processAssets();
-      });
-    }
-
-    // 初始化移动端右侧空白修正开关
-    const mobileFixToggleBtn = dialog.querySelector("#mobileFixToggleBtn");
-    if (mobileFixToggleBtn) {
-      let isMobileFixEnabled = GM_getValue("mobileLayoutFix", true);
-      const updateMobileFixBtnUI = (enabled) => {
-        mobileFixToggleBtn.classList.toggle("disabled", !enabled);
-        mobileFixToggleBtn.innerHTML = enabled ? "✓" : "✕";
-        mobileFixToggleBtn.title = enabled ? i18n.t("enabledTitle") : i18n.t("disabledTitle");
-      };
-      updateMobileFixBtnUI(isMobileFixEnabled);
-      mobileFixToggleBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        isMobileFixEnabled = !isMobileFixEnabled;
-        GM_setValue("mobileLayoutFix", isMobileFixEnabled);
-        updateMobileFixBtnUI(isMobileFixEnabled);
-        applyMobileLayoutFix();
-      });
-    }
-
-    // 初始化关键词高亮切换状态
-    const highlightToggleBtn = dialog.querySelector("#highlightToggleBtn");
-    if (highlightToggleBtn) {
-      let isHighlightEnabled = GM_getValue("highlightEnabled", true);
-
-      // 更新按钮UI的函数
-      const updateHighlightBtnUI = (enabled) => {
-        highlightToggleBtn.classList.toggle("disabled", !enabled);
-        highlightToggleBtn.innerHTML = enabled ? "✓" : "✕";
-        highlightToggleBtn.title = enabled
-          ? i18n.t("enabledTitle")
-          : i18n.t("disabledTitle");
-      };
-
-      updateHighlightBtnUI(isHighlightEnabled);
-
-      highlightToggleBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        isHighlightEnabled = !isHighlightEnabled;
-        GM_setValue("highlightEnabled", isHighlightEnabled);
-        updateHighlightBtnUI(isHighlightEnabled);
-        processAssets();
-      });
-    }
-
-    // 获取元素引用
-    const closeBtn = dialog.querySelector(".color-picker-close");
-    const cancelBtn = dialog.querySelector(".cancel-button");
-    const confirmBtn = dialog.querySelector(".confirm-button");
-    const resetBtn = dialog.querySelector(".reset-button");
-
-    // HEX 验证/规范化统一使用全局 sanitizeHexColor（见文件头部工具区）
-
-    const defaultColors =
-      getCurrentTheme() === "dark" ? defaultColorsDark : defaultColorsLight;
-
-    // 创建自定义color picker子面板
-    const createColorPickerPanel = (colorBtn, colorName, defaultColor, onChange) => {
-      const panel = document.createElement("div");
-      panel.className = "custom-color-picker-panel";
-      panel.innerHTML = `
+  /**
+   * 内置颜色选择器子面板（模块级）。
+   * 通过参数接收 refreshRealtimeStyles，不再隐式捕获 createColorPickerDialog 的闭包。
+   */
+  function createColorPickerPanel(colorBtn, colorName, defaultColor, onChange, refreshRealtimeStyles) {
+    const panel = document.createElement("div");
+    panel.className = "custom-color-picker-panel";
+    panel.innerHTML = `
                 <div class="color-picker-libraries-container" id="libraries-container"></div>
             `;
 
-      const librariesContainer = panel.querySelector("#libraries-container");
+    const librariesContainer = panel.querySelector("#libraries-container");
 
-      // 定义变量以便在 updateAllPickers 中访问
-      let hexInput, preview;
+    // 定义变量以便在 updateAllPickers 中访问
+    let hexInput, preview;
 
-      // 共用颜色状态
-      let currentColor = defaultColor;
+    // 共用颜色状态
+    let currentColor = defaultColor;
 
-      // HEX/RGB/HSL转换函数
-      const hexToRgb = (hex) => {
-        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-        return result
-          ? {
-              r: parseInt(result[1], 16),
-              g: parseInt(result[2], 16),
-              b: parseInt(result[3], 16),
-            }
-          : null;
-      };
+    // 颜色转换统一走模块级工具区（rgbToHex / hexToRgb / hslToHex / hexToHSL 等）
 
-      const rgbToHex = (r, g, b) => {
-        return (
-          "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)
-        );
-      };
+    const updateAllPickers = (newColor) => {
+      currentColor = newColor;
+      if (hexInput) hexInput.value = newColor;
+      if (preview) preview.style.backgroundColor = newColor;
 
-      const updateAllPickers = (newColor) => {
-        currentColor = newColor;
-        if (hexInput) hexInput.value = newColor;
-        if (preview) preview.style.backgroundColor = newColor;
+      // 关键修复：直接修改 colorBtn 的 style 属性
+      if (colorBtn) {
+        colorBtn.style.backgroundColor = newColor;
+        colorBtn.title = `${colorName}: ${newColor}`; // 实时更新按钮提示文字
+      }
 
-        // 关键修复：直接修改 colorBtn 的 style 属性
-        if (colorBtn) {
-          colorBtn.style.backgroundColor = newColor;
-          colorBtn.title = `${colorName}: ${newColor}`; // 实时更新按钮提示文字
-        }
+      // 通知外部（如关键词规则）颜色已变更
+      if (typeof onChange === "function") onChange(newColor);
 
-        // 通知外部（如关键词规则）颜色已变更
-        if (typeof onChange === "function") onChange(newColor);
+      // 实时刷新页面样式
+      if (typeof refreshRealtimeStyles === "function") {
+        refreshRealtimeStyles();
+      }
 
-        // 实时刷新页面样式
-        if (typeof refreshRealtimeStyles === "function") {
-          refreshRealtimeStyles();
-        }
+      // 更新三个库的色值
+      if (window.Pickr && panel._pickr) {
+        panel._pickr.setColor(newColor);
+      }
+      if (window.Huebee && panel._huebee) {
+        panel._huebee.setColor(newColor);
+      }
+      if (window.$ && panel._spectrum) {
+        panel._spectrum.spectrum("set", newColor);
+      }
+    };
 
-        // 更新三个库的色值
-        if (window.Pickr && panel._pickr) {
-          panel._pickr.setColor(newColor);
-        }
-        if (window.Huebee && panel._huebee) {
-          panel._huebee.setColor(newColor);
-        }
-        if (window.$ && panel._spectrum) {
-          panel._spectrum.spectrum("set", newColor);
-        }
-      };
+    // 初始化内置颜色选择器（无需外部库）
+    const initializeLibraries = () => {
+      console.log(`[MGGA] ${i18n.t("builtinPicker")}`);
 
-      // 定义转换函数（用于内置颜色选择器）
-      const hslToHex = (h, s, l) => {
-        h = parseInt(h);
-        s = parseInt(s) / 100;
-        l = parseInt(l) / 100;
+      const hsl = hexToHSL(defaultColor);
 
-        const c = (1 - Math.abs(2 * l - 1)) * s;
-        const hh = h / 60;
-        const x = c * (1 - Math.abs((hh % 2) - 1));
-        let r = 0,
-          g = 0,
-          b = 0;
-
-        if (hh <= 1) {
-          r = c;
-          g = x;
-          b = 0;
-        } else if (hh <= 2) {
-          r = x;
-          g = c;
-          b = 0;
-        } else if (hh <= 3) {
-          r = 0;
-          g = c;
-          b = x;
-        } else if (hh <= 4) {
-          r = 0;
-          g = x;
-          b = c;
-        } else if (hh <= 5) {
-          r = x;
-          g = 0;
-          b = c;
-        } else {
-          r = c;
-          g = 0;
-          b = x;
-        }
-
-        const m = l - c / 2;
-        const toHex = (n) => {
-          const hex = Math.round((n + m) * 255).toString(16);
-          return hex.length === 1 ? "0" + hex : hex;
-        };
-
-        return "#" + toHex(r) + toHex(g) + toHex(b);
-      };
-
-      const hexToHSL = (color) => {
-        let r, g, b;
-
-        if (color.startsWith("#")) {
-          if (color.length === 4) {
-            r = parseInt(color[1] + color[1], 16) / 255;
-            g = parseInt(color[2] + color[2], 16) / 255;
-            b = parseInt(color[3] + color[3], 16) / 255;
-          } else {
-            r = parseInt(color.slice(1, 3), 16) / 255;
-            g = parseInt(color.slice(3, 5), 16) / 255;
-            b = parseInt(color.slice(5, 7), 16) / 255;
-          }
-        } else if (color.startsWith("rgb")) {
-          const match = color.match(/\d+/g);
-          if (match) {
-            r = parseInt(match[0]) / 255;
-            g = parseInt(match[1]) / 255;
-            b = parseInt(match[2]) / 255;
-          }
-        }
-
-        // 兜底方案
-        if (isNaN(r) || isNaN(g) || isNaN(b)) {
-          return { h: 0, s: 0, l: 50 };
-        }
-
-        const max = Math.max(r, g, b);
-        const min = Math.min(r, g, b);
-        let h, s, l = (max + min) / 2;
-
-        if (max === min) {
-          h = s = 0;
-        } else {
-          const d = max - min;
-          s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-          switch (max) {
-            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-            case g: h = (b - r) / d + 2; break;
-            case b: h = (r - g) / d + 4; break;
-          }
-          h /= 6;
-        }
-
-        return {
-          h: Math.round(h * 360),
-          s: Math.round(s * 100),
-          l: Math.round(l * 100),
-        };
-      };
-
-      // 初始化内置颜色选择器（无需外部库）
-      const initializeLibraries = () => {
-        console.log(`[MGGA] ${i18n.t("builtinPicker")}`);
-
-        const hsl = hexToHSL(defaultColor);
-
-        // 创建内置颜色选择器 HTML - 仿浏览器原生色彩器
-        const pickerHTML = `
+      // 创建内置颜色选择器 HTML - 仿浏览器原生色彩器
+      const pickerHTML = `
                     <div class="builtin-color-picker-container">
                         <!-- 颜色预览区域 -->
                         <div class="color-picker-preview" id="builtin-color-preview" style="background-color: ${defaultColor}"></div>
@@ -1750,566 +1718,865 @@
                     </div>
                 `;
 
-        librariesContainer.innerHTML = pickerHTML;
-        librariesContainer.style.padding = "0";
-        librariesContainer.style.border = "none";
-        librariesContainer.style.background = "none";
+      librariesContainer.innerHTML = pickerHTML;
+      librariesContainer.style.padding = "0";
+      librariesContainer.style.border = "none";
+      librariesContainer.style.background = "none";
 
-        // 获取元素
-        const colorAreaMain =
-          librariesContainer.querySelector("#color-area-main");
-        const colorAreaCanvas =
-          librariesContainer.querySelector("#color-area-canvas");
-        const colorPickerPoint = librariesContainer.querySelector(
-          "#color-picker-point",
-        );
-        const hueStrip = librariesContainer.querySelector("#hue-strip");
-        const huePicker = librariesContainer.querySelector("#hue-picker");
+      // 获取元素
+      const colorAreaMain =
+        librariesContainer.querySelector("#color-area-main");
+      const colorAreaCanvas =
+        librariesContainer.querySelector("#color-area-canvas");
+      const colorPickerPoint = librariesContainer.querySelector(
+        "#color-picker-point",
+      );
+      const hueStrip = librariesContainer.querySelector("#hue-strip");
+      const huePicker = librariesContainer.querySelector("#hue-picker");
 
-        // 赋值给外部作用域变量
-        hexInput = librariesContainer.querySelector(
-          ".builtin-hex-single-input",
-        );
-        preview = librariesContainer.querySelector("#builtin-color-preview");
+      // 赋值给外部作用域变量
+      hexInput = librariesContainer.querySelector(
+        ".builtin-hex-single-input",
+      );
+      preview = librariesContainer.querySelector("#builtin-color-preview");
 
-        const multiInputContainer = librariesContainer.querySelector(
-          ".builtin-multi-input-container",
-        );
-        const valueInput1 =
-          librariesContainer.querySelector(".builtin-input-1");
-        const valueInput2 =
-          librariesContainer.querySelector(".builtin-input-2");
-        const valueInput3 =
-          librariesContainer.querySelector(".builtin-input-3");
-        const presetContainer = librariesContainer.querySelector(
-          ".builtin-preset-colors-row",
-        );
-        const formatToggleBtn = librariesContainer.querySelector(
-          ".builtin-format-toggle-btn",
-        );
+      const multiInputContainer = librariesContainer.querySelector(
+        ".builtin-multi-input-container",
+      );
+      const valueInput1 =
+        librariesContainer.querySelector(".builtin-input-1");
+      const valueInput2 =
+        librariesContainer.querySelector(".builtin-input-2");
+      const valueInput3 =
+        librariesContainer.querySelector(".builtin-input-3");
+      const presetContainer = librariesContainer.querySelector(
+        ".builtin-preset-colors-row",
+      );
+      const formatToggleBtn = librariesContainer.querySelector(
+        ".builtin-format-toggle-btn",
+      );
 
-        const ctx = colorAreaCanvas.getContext("2d");
-        let currentH = hsl.h,
-          currentS = hsl.s,
-          currentL = hsl.l;
-        let currentFormat = "HEX"; // 'HEX', 'HSL', 'RGB'
+      const ctx = colorAreaCanvas.getContext("2d");
+      let currentH = hsl.h,
+        currentS = hsl.s,
+        currentL = hsl.l;
+      let currentFormat = "HEX"; // 'HEX', 'HSL', 'RGB'
 
-        // RGB到HSL转换函数
-        const rgbToHSL = (r, g, b) => {
-          r /= 255;
-          g /= 255;
-          b /= 255;
+      // 颜色转换统一走模块级工具区（rgbToHSL / hslToRGB / rgbToHex）
 
-          const max = Math.max(r, g, b);
-          const min = Math.min(r, g, b);
-          const l = (max + min) / 2;
-
-          if (max === min) {
-            return { h: 0, s: 0, l: Math.round(l * 100) };
-          }
-
-          const d = max - min;
-          const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-
-          let h = 0;
-          if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-          else if (max === g) h = ((b - r) / d + 2) / 6;
-          else h = ((r - g) / d + 4) / 6;
-
-          return {
-            h: Math.round(h * 360),
-            s: Math.round(s * 100),
-            l: Math.round(l * 100),
-          };
-        };
-
-        // HSL到RGB转换函数
-        const hslToRGB = (h, s, l) => {
-          h = h / 360;
-          s = s / 100;
-          l = l / 100;
-
-          let r, g, b;
-
-          if (s === 0) {
-            r = g = b = l;
-          } else {
-            const hue2rgb = (p, q, t) => {
-              if (t < 0) t += 1;
-              if (t > 1) t -= 1;
-              if (t < 1 / 6) return p + (q - p) * 6 * t;
-              if (t < 1 / 2) return q;
-              if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-              return p;
-            };
-
-            const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-            const p = 2 * l - q;
-            r = hue2rgb(p, q, h + 1 / 3);
-            g = hue2rgb(p, q, h);
-            b = hue2rgb(p, q, h - 1 / 3);
-          }
-
-          return {
-            r: Math.round(r * 255),
-            g: Math.round(g * 255),
-            b: Math.round(b * 255),
-          };
-        };
-
-        // RGB到HEX转换函数
-        const rgbToHex = (r, g, b) => {
-          return (
-            "#" +
-            [r, g, b]
-              .map((x) => {
-                const hex = x.toString(16);
-                return hex.length === 1 ? "0" + hex : hex;
-              })
-              .join("")
-              .toUpperCase()
-          );
-        };
-
-        // 格式化显示值
-        const formatDisplayValue = (format) => {
-          if (format === "HEX") {
-            return hslToHex(currentH, currentS, currentL);
-          } else if (format === "HSL") {
-            return `${currentH} ${currentS}% ${currentL}%`;
-          } else {
-            // RGB
-            const rgb = hslToRGB(currentH, currentS, currentL);
-            return `${rgb.r} ${rgb.g} ${rgb.b}`;
-          }
-        };
-
-        // 更新输入框显示
-        const updateInputDisplay = () => {
-          if (currentFormat === "HEX") {
-            hexInput.style.display = "block";
-            multiInputContainer.style.display = "none";
-            hexInput.value = formatDisplayValue("HEX");
-          } else if (currentFormat === "RGB") {
-            hexInput.style.display = "none";
-            multiInputContainer.style.display = "flex";
-            const rgb = hslToRGB(currentH, currentS, currentL);
-            valueInput1.value = rgb.r;
-            valueInput2.value = rgb.g;
-            valueInput3.value = rgb.b;
-            valueInput1.placeholder = "R";
-            valueInput2.placeholder = "G";
-            valueInput3.placeholder = "B";
-          } else if (currentFormat === "HSL") {
-            hexInput.style.display = "none";
-            multiInputContainer.style.display = "flex";
-            valueInput1.value = currentH;
-            valueInput2.value = currentS;
-            valueInput3.value = currentL;
-            valueInput1.placeholder = "H";
-            valueInput2.placeholder = "S";
-            valueInput3.placeholder = "L";
-          }
-        };
-
-        // 格式切换按钮点击事件
-        if (formatToggleBtn) {
-          formatToggleBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-
-            const formats = ["HEX", "RGB", "HSL"];
-            const currentIndex = formats.indexOf(currentFormat);
-            currentFormat = formats[(currentIndex + 1) % formats.length];
-
-            formatToggleBtn.textContent = currentFormat;
-            updateInputDisplay();
-
-            // 聚焦到新的输入框
-            if (currentFormat === "HEX") {
-              hexInput.focus();
-              hexInput.select();
-            } else {
-              valueInput1.focus();
-              valueInput1.select();
-            }
-          });
+      // 格式化显示值
+      const formatDisplayValue = (format) => {
+        if (format === "HEX") {
+          return hslToHex(currentH, currentS, currentL);
+        } else if (format === "HSL") {
+          return `${currentH} ${currentS}% ${currentL}%`;
+        } else {
+          // RGB
+          const rgb = hslToRGB(currentH, currentS, currentL);
+          return `${rgb.r} ${rgb.g} ${rgb.b}`;
         }
-
-        // 初始化输入框显示
-        updateInputDisplay();
-
-        // 绘制色调条（竖条）
-        const drawHueStrip = () => {
-          const stripHeight = hueStrip.offsetHeight || 150;
-          const stripCanvas = document.createElement("canvas");
-          stripCanvas.width = 20;
-          stripCanvas.height = stripHeight;
-          const stripCtx = stripCanvas.getContext("2d");
-
-          for (let i = 0; i < stripHeight; i++) {
-            const h = (i / stripHeight) * 360;
-            stripCtx.fillStyle = `hsl(${h}, 100%, 50%)`;
-            stripCtx.fillRect(0, i, 20, 1);
-          }
-
-          hueStrip.style.backgroundImage = `url(${stripCanvas.toDataURL()})`;
-          hueStrip.style.backgroundSize = "100% 100%";
-        };
-
-        // 绘制主色彩区 (饱和度和亮度) - 优化版：使用双重渐变减少循环
-        const drawColorArea = () => {
-          const width = colorAreaCanvas.width;
-          const height = colorAreaCanvas.height;
-
-          // 1. 清除画布
-          ctx.clearRect(0, 0, width, height);
-
-          // 2. 填充基础色（纯色，由当前色相决定）
-          ctx.fillStyle = `hsl(${currentH}, 100%, 50%)`;
-          ctx.fillRect(0, 0, width, height);
-
-          // 3. 叠加白色渐变（从左到右，饱和度从0到100%）
-          const whiteGradient = ctx.createLinearGradient(0, 0, width, 0);
-          whiteGradient.addColorStop(0, "rgba(255, 255, 255, 1)");
-          whiteGradient.addColorStop(1, "rgba(255, 255, 255, 0)");
-          ctx.fillStyle = whiteGradient;
-          ctx.fillRect(0, 0, width, height);
-
-          // 4. 叠加黑色渐变（从下到上，亮度从0到100%）
-          const blackGradient = ctx.createLinearGradient(0, height, 0, 0);
-          blackGradient.addColorStop(0, "rgba(0, 0, 0, 1)");
-          blackGradient.addColorStop(0.5, "rgba(0, 0, 0, 0)");
-          blackGradient.addColorStop(0.5, "rgba(255, 255, 255, 0)");
-          blackGradient.addColorStop(1, "rgba(255, 255, 255, 1)");
-          ctx.fillStyle = blackGradient;
-          ctx.fillRect(0, 0, width, height);
-
-          // 更新选择器位置
-          colorPickerPoint.style.left = currentS + "%";
-          colorPickerPoint.style.top = 100 - currentL + "%";
-        };
-
-        // 初始化绘制
-        drawHueStrip();
-        drawColorArea();
-
-        // 颜色区点击和拖拽处理
-        const handleColorAreaClick = (e) => {
-          if (e) {
-            e.stopPropagation();
-            if (e.type === "mousedown") e.preventDefault();
-          }
-          const rect = colorAreaCanvas.getBoundingClientRect();
-          const x = e.clientX - rect.left;
-          const y = e.clientY - rect.top;
-
-          currentS = Math.max(0, Math.min(100, (x / rect.width) * 100));
-          currentL = Math.max(0, Math.min(100, 100 - (y / rect.height) * 100));
-
-          drawColorArea();
-          updateColor();
-        };
-
-        // 色调条点击处理
-        const handleHueClick = (e) => {
-          if (e) {
-            e.stopPropagation();
-            if (e.type === "mousedown") e.preventDefault();
-          }
-          const rect = hueStrip.getBoundingClientRect();
-          const y = e.clientY - rect.top;
-          const h = Math.max(0, Math.min(360, (y / rect.height) * 360));
-
-          currentH = h;
-          huePicker.style.top = (y / rect.height) * 100 + "%";
-          drawColorArea();
-          updateColor();
-        };
-
-        // 更新颜色
-        const updateColor = () => {
-          const newColor = hslToHex(currentH, currentS, currentL);
-          updateInputDisplay();
-          updateAllPickers(newColor);
-        };
-
-        // 获取清除按钮
-        const clearBtn = librariesContainer.querySelector(".builtin-clear-btn");
-        if (clearBtn) {
-          clearBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            const defaultHsl = hexToHSL(defaultColor);
-            currentH = defaultHsl.h;
-            currentS = defaultHsl.s;
-            currentL = defaultHsl.l;
-            currentFormat = "HEX";
-
-            formatToggleBtn.textContent = currentFormat;
-            updateInputDisplay();
-            huePicker.style.top = (currentH / 360) * 100 + "%";
-            drawColorArea();
-            updateAllPickers(defaultColor);
-          });
-        }
-
-        // 处理HEX输入框的change事件
-        hexInput.addEventListener("change", (e) => {
-          const value = e.target.value.trim();
-          if (/^#[0-9A-F]{6}$/i.test(value)) {
-            const newHsl = hexToHSL(value);
-            currentH = newHsl.h;
-            currentS = newHsl.s;
-            currentL = newHsl.l;
-
-            huePicker.style.top = (currentH / 360) * 100 + "%";
-            drawColorArea();
-            updateColor();
-          } else {
-            updateInputDisplay();
-          }
-        });
-
-        // 处理HEX输入框的input事件（实时转换）
-        hexInput.addEventListener("input", (e) => {
-          const value = e.target.value.trim();
-          if (/^#[0-9A-F]{6}$/i.test(value)) {
-            const newHsl = hexToHSL(value);
-            currentH = newHsl.h;
-            currentS = newHsl.s;
-            currentL = newHsl.l;
-
-            huePicker.style.top = (currentH / 360) * 100 + "%";
-            drawColorArea();
-            updateAllPickers(value);
-          }
-        });
-
-        // 处理RGB/HSL三输入框的共用函数
-        const handleValueInputChange = () => {
-          const val1 = parseInt(valueInput1.value) || 0;
-          const val2 = parseInt(valueInput2.value) || 0;
-          const val3 = parseInt(valueInput3.value) || 0;
-
-          if (currentFormat === "RGB") {
-            // RGB模式
-            if (
-              val1 >= 0 &&
-              val1 <= 255 &&
-              val2 >= 0 &&
-              val2 <= 255 &&
-              val3 >= 0 &&
-              val3 <= 255
-            ) {
-              const newHsl = rgbToHSL(val1, val2, val3);
-              currentH = newHsl.h;
-              currentS = newHsl.s;
-              currentL = newHsl.l;
-
-              const hexColor = rgbToHex(val1, val2, val3);
-              huePicker.style.top = (currentH / 360) * 100 + "%";
-              drawColorArea();
-              updateAllPickers(hexColor);
-            }
-          } else if (currentFormat === "HSL") {
-            // HSL模式
-            if (
-              val1 >= 0 &&
-              val1 <= 360 &&
-              val2 >= 0 &&
-              val2 <= 100 &&
-              val3 >= 0 &&
-              val3 <= 100
-            ) {
-              currentH = val1;
-              currentS = val2;
-              currentL = val3;
-
-              const hexColor = hslToHex(val1, val2, val3);
-              huePicker.style.top = (currentH / 360) * 100 + "%";
-              drawColorArea();
-              updateAllPickers(hexColor);
-            }
-          }
-        };
-
-        // 为三个输入框添加事件监听
-        [valueInput1, valueInput2, valueInput3].forEach((input) => {
-          input.addEventListener("change", handleValueInputChange);
-          input.addEventListener("input", handleValueInputChange);
-        });
-
-        // 绑定事件
-        colorAreaMain.addEventListener("click", handleColorAreaClick);
-        colorAreaMain.addEventListener("mousedown", (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          const handleMove = (moveE) => {
-            moveE.stopPropagation();
-            handleColorAreaClick(moveE);
-          };
-          const handleUp = (upE) => {
-            upE.stopPropagation();
-            document.removeEventListener("mousemove", handleMove);
-            document.removeEventListener("mouseup", handleUp);
-          };
-          document.addEventListener("mousemove", handleMove);
-          document.addEventListener("mouseup", handleUp);
-          handleColorAreaClick(e); // 初始点击也触发一次
-        });
-
-        hueStrip.addEventListener("click", handleHueClick);
-        hueStrip.addEventListener("mousedown", (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          const handleMove = (moveE) => {
-            moveE.stopPropagation();
-            handleHueClick(moveE);
-          };
-          const handleUp = (upE) => {
-            upE.stopPropagation();
-            document.removeEventListener("mousemove", handleMove);
-            document.removeEventListener("mouseup", handleUp);
-          };
-          document.addEventListener("mousemove", handleMove);
-          document.addEventListener("mouseup", handleUp);
-          handleHueClick(e); // 初始点击也触发一次
-        });
-
-        // 创建预设颜色
-        const presetColors = [
-          "#000000",
-          "#FFFFFF",
-          "#FF0000",
-          "#00FF00",
-          "#0000FF",
-          "#FFFF00",
-          "#FF00FF",
-          "#00FFFF",
-          "#808080",
-          "#FFB6C1",
-          "#FFC0CB",
-          "#FF69B4",
-          "#FF6347",
-          "#FFA500",
-          "#FFD700",
-          "#90EE90",
-          "#87CEEB",
-          "#4169E1",
-        ];
-
-        presetColors.forEach((color) => {
-          const swatch = document.createElement("div");
-          swatch.className = "builtin-preset-color-swatch";
-          swatch.style.backgroundColor = color;
-          swatch.title = color;
-          swatch.addEventListener("click", (e) => {
-            e.stopPropagation();
-            const newHsl = hexToHSL(color);
-            currentH = newHsl.h;
-            currentS = newHsl.s;
-            currentL = newHsl.l;
-            currentFormat = "HEX";
-
-            formatToggleBtn.textContent = currentFormat;
-            updateInputDisplay();
-            huePicker.style.top = (currentH / 360) * 100 + "%";
-            drawColorArea();
-            updateColor();
-          });
-          presetContainer.appendChild(swatch);
-        });
-
-        console.log("[MGGA] 内置颜色选择器初始化完成");
       };
 
-      // 立即初始化内置颜色选择器
-      initializeLibraries();
-
-      return panel;
-    };
-
-    // 打开/关闭color picker子面板
-    const toggleColorPickerPanel = (colorBtn, colorName, defaultColor, onChange, onClose) => {
-      // 关闭其他开放的面板
-      document.querySelectorAll(".custom-color-picker-panel").forEach((p) => {
-        if (p._closeHandler) {
-          document.removeEventListener("click", p._closeHandler);
+      // 更新输入框显示
+      const updateInputDisplay = () => {
+        if (currentFormat === "HEX") {
+          hexInput.style.display = "block";
+          multiInputContainer.style.display = "none";
+          hexInput.value = formatDisplayValue("HEX");
+        } else if (currentFormat === "RGB") {
+          hexInput.style.display = "none";
+          multiInputContainer.style.display = "flex";
+          const rgb = hslToRGB(currentH, currentS, currentL);
+          valueInput1.value = rgb.r;
+          valueInput2.value = rgb.g;
+          valueInput3.value = rgb.b;
+          valueInput1.placeholder = "R";
+          valueInput2.placeholder = "G";
+          valueInput3.placeholder = "B";
+        } else if (currentFormat === "HSL") {
+          hexInput.style.display = "none";
+          multiInputContainer.style.display = "flex";
+          valueInput1.value = currentH;
+          valueInput2.value = currentS;
+          valueInput3.value = currentL;
+          valueInput1.placeholder = "H";
+          valueInput2.placeholder = "S";
+          valueInput3.placeholder = "L";
         }
-        if (p._resizeObserver) {
-          p._resizeObserver.disconnect();
+      };
+
+      // 格式切换按钮点击事件
+      if (formatToggleBtn) {
+        formatToggleBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+
+          const formats = ["HEX", "RGB", "HSL"];
+          const currentIndex = formats.indexOf(currentFormat);
+          currentFormat = formats[(currentIndex + 1) % formats.length];
+
+          formatToggleBtn.textContent = currentFormat;
+          updateInputDisplay();
+
+          // 聚焦到新的输入框
+          if (currentFormat === "HEX") {
+            hexInput.focus();
+            hexInput.select();
+          } else {
+            valueInput1.focus();
+            valueInput1.select();
+          }
+        });
+      }
+
+      // 初始化输入框显示
+      updateInputDisplay();
+
+      // 绘制色调条（竖条）
+      const drawHueStrip = () => {
+        const stripHeight = hueStrip.offsetHeight || 150;
+        const stripCanvas = document.createElement("canvas");
+        stripCanvas.width = 20;
+        stripCanvas.height = stripHeight;
+        const stripCtx = stripCanvas.getContext("2d");
+
+        for (let i = 0; i < stripHeight; i++) {
+          const h = (i / stripHeight) * 360;
+          stripCtx.fillStyle = `hsl(${h}, 100%, 50%)`;
+          stripCtx.fillRect(0, i, 20, 1);
         }
-        p.remove();
-        // 如果面板有关联的按钮，清除引用
-        if (p._associatedBtn) {
-          p._associatedBtn._panel = null;
+
+        hueStrip.style.backgroundImage = `url(${stripCanvas.toDataURL()})`;
+        hueStrip.style.backgroundSize = "100% 100%";
+      };
+
+      // 绘制主色彩区 (饱和度和亮度) - 优化版：使用双重渐变减少循环
+      const drawColorArea = () => {
+        const width = colorAreaCanvas.width;
+        const height = colorAreaCanvas.height;
+
+        // 1. 清除画布
+        ctx.clearRect(0, 0, width, height);
+
+        // 2. 填充基础色（纯色，由当前色相决定）
+        ctx.fillStyle = `hsl(${currentH}, 100%, 50%)`;
+        ctx.fillRect(0, 0, width, height);
+
+        // 3. 叠加白色渐变（从左到右，饱和度从0到100%）
+        const whiteGradient = ctx.createLinearGradient(0, 0, width, 0);
+        whiteGradient.addColorStop(0, "rgba(255, 255, 255, 1)");
+        whiteGradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+        ctx.fillStyle = whiteGradient;
+        ctx.fillRect(0, 0, width, height);
+
+        // 4. 叠加黑色渐变（从下到上，亮度从0到100%）
+        const blackGradient = ctx.createLinearGradient(0, height, 0, 0);
+        blackGradient.addColorStop(0, "rgba(0, 0, 0, 1)");
+        blackGradient.addColorStop(0.5, "rgba(0, 0, 0, 0)");
+        blackGradient.addColorStop(0.5, "rgba(255, 255, 255, 0)");
+        blackGradient.addColorStop(1, "rgba(255, 255, 255, 1)");
+        ctx.fillStyle = blackGradient;
+        ctx.fillRect(0, 0, width, height);
+
+        // 更新选择器位置
+        colorPickerPoint.style.left = currentS + "%";
+        colorPickerPoint.style.top = 100 - currentL + "%";
+      };
+
+      // 初始化绘制
+      drawHueStrip();
+      drawColorArea();
+
+      // 颜色区点击和拖拽处理
+      const handleColorAreaClick = (e) => {
+        if (e) {
+          e.stopPropagation();
+          if (e.type === "mousedown") e.preventDefault();
+        }
+        const rect = colorAreaCanvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        currentS = Math.max(0, Math.min(100, (x / rect.width) * 100));
+        currentL = Math.max(0, Math.min(100, 100 - (y / rect.height) * 100));
+
+        drawColorArea();
+        updateColor();
+      };
+
+      // 色调条点击处理
+      const handleHueClick = (e) => {
+        if (e) {
+          e.stopPropagation();
+          if (e.type === "mousedown") e.preventDefault();
+        }
+        const rect = hueStrip.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        const h = Math.max(0, Math.min(360, (y / rect.height) * 360));
+
+        currentH = h;
+        huePicker.style.top = (y / rect.height) * 100 + "%";
+        drawColorArea();
+        updateColor();
+      };
+
+      // 更新颜色
+      const updateColor = () => {
+        const newColor = hslToHex(currentH, currentS, currentL);
+        updateInputDisplay();
+        updateAllPickers(newColor);
+      };
+
+      // 获取清除按钮
+      const clearBtn = librariesContainer.querySelector(".builtin-clear-btn");
+      if (clearBtn) {
+        clearBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const defaultHsl = hexToHSL(defaultColor);
+          currentH = defaultHsl.h;
+          currentS = defaultHsl.s;
+          currentL = defaultHsl.l;
+          currentFormat = "HEX";
+
+          formatToggleBtn.textContent = currentFormat;
+          updateInputDisplay();
+          huePicker.style.top = (currentH / 360) * 100 + "%";
+          drawColorArea();
+          updateAllPickers(defaultColor);
+        });
+      }
+
+      // 处理HEX输入框的change事件
+      hexInput.addEventListener("change", (e) => {
+        const value = e.target.value.trim();
+        if (/^#[0-9A-F]{6}$/i.test(value)) {
+          const newHsl = hexToHSL(value);
+          currentH = newHsl.h;
+          currentS = newHsl.s;
+          currentL = newHsl.l;
+
+          huePicker.style.top = (currentH / 360) * 100 + "%";
+          drawColorArea();
+          updateColor();
+        } else {
+          updateInputDisplay();
         }
       });
 
-      if (colorBtn._panel && document.body.contains(colorBtn._panel)) {
-        // 如果点击的是已经打开的按钮，上面的逻辑已经关闭它了，这里不需要额外操作
-        colorBtn._panel = null;
-      } else {
-        let panel;
-        try {
-          panel = createColorPickerPanel(colorBtn, colorName, defaultColor, onChange);
-        } catch (err) {
-          console.error("[MGGA] createColorPickerPanel error:", err);
-          return;
+      // 处理HEX输入框的input事件（实时转换）
+      hexInput.addEventListener("input", (e) => {
+        const value = e.target.value.trim();
+        if (/^#[0-9A-F]{6}$/i.test(value)) {
+          const newHsl = hexToHSL(value);
+          currentH = newHsl.h;
+          currentS = newHsl.s;
+          currentL = newHsl.l;
+
+          huePicker.style.top = (currentH / 360) * 100 + "%";
+          drawColorArea();
+          updateAllPickers(value);
         }
-        panel._associatedBtn = colorBtn; // 建立双向引用以便清理
+      });
 
-        document.body.appendChild(panel);
-        colorBtn._panel = panel;
+      // 处理RGB/HSL三输入框的共用函数
+      const handleValueInputChange = () => {
+        const val1 = parseInt(valueInput1.value) || 0;
+        const val2 = parseInt(valueInput2.value) || 0;
+        const val3 = parseInt(valueInput3.value) || 0;
 
-        const repositionPanel = () => {
-          if (!document.body.contains(panel)) return;
-          placeFixedInViewport(panel, {
-            margin: 8,
-            centerY: false,
-            scrollable: true,
-            anchorRect: colorBtn.getBoundingClientRect(),
-          });
-        };
-        repositionPanel();
+        if (currentFormat === "RGB") {
+          // RGB模式
+          if (
+            val1 >= 0 &&
+            val1 <= 255 &&
+            val2 >= 0 &&
+            val2 <= 255 &&
+            val3 >= 0 &&
+            val3 <= 255
+          ) {
+            const newHsl = rgbToHSL(val1, val2, val3);
+            currentH = newHsl.h;
+            currentS = newHsl.s;
+            currentL = newHsl.l;
 
-        // 内容异步加载/尺寸变化时重新夹紧，保证始终在屏幕内
-        if (typeof ResizeObserver !== "undefined") {
-          let roRaf = 0;
-          const ro = new ResizeObserver(() => {
-            if (roRaf) cancelAnimationFrame(roRaf);
-            roRaf = requestAnimationFrame(repositionPanel);
-          });
-          ro.observe(panel);
-          panel._resizeObserver = ro;
-        }
-        // 双 rAF + 延迟兜底：等内置取色器等子内容完成布局
-        requestAnimationFrame(() => {
-          requestAnimationFrame(repositionPanel);
-        });
-        setTimeout(repositionPanel, 80);
-        setTimeout(repositionPanel, 250);
-
-        // 点击其他地方关闭面板
-        const closeHandler = (e) => {
-          // 检查是否点击了颜色按钮本身，如果是则不关闭（因为会再次打开）
-          if (e.target === colorBtn || colorBtn.contains(e.target)) return;
-
-          // 检查是否在面板内部点击
-          if (panel.contains(e.target)) return;
-
-          // 执行关闭
-          if (panel._resizeObserver) {
-            panel._resizeObserver.disconnect();
+            const hexColor = rgbToHex(val1, val2, val3);
+            huePicker.style.top = (currentH / 360) * 100 + "%";
+            drawColorArea();
+            updateAllPickers(hexColor);
           }
-          panel.remove();
-          colorBtn._panel = null;
-          document.removeEventListener("click", closeHandler);
-          if (typeof onClose === "function") onClose();
+        } else if (currentFormat === "HSL") {
+          // HSL模式
+          if (
+            val1 >= 0 &&
+            val1 <= 360 &&
+            val2 >= 0 &&
+            val2 <= 100 &&
+            val3 >= 0 &&
+            val3 <= 100
+          ) {
+            currentH = val1;
+            currentS = val2;
+            currentL = val3;
+
+            const hexColor = hslToHex(val1, val2, val3);
+            huePicker.style.top = (currentH / 360) * 100 + "%";
+            drawColorArea();
+            updateAllPickers(hexColor);
+          }
+        }
+      };
+
+      // 为三个输入框添加事件监听
+      [valueInput1, valueInput2, valueInput3].forEach((input) => {
+        input.addEventListener("change", handleValueInputChange);
+        input.addEventListener("input", handleValueInputChange);
+      });
+
+      // 绑定事件
+      colorAreaMain.addEventListener("click", handleColorAreaClick);
+      colorAreaMain.addEventListener("mousedown", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const handleMove = (moveE) => {
+          moveE.stopPropagation();
+          handleColorAreaClick(moveE);
         };
-        panel._closeHandler = closeHandler; // 保存引用以便外部清理
-        setTimeout(() => document.addEventListener("click", closeHandler), 0);
+        const handleUp = (upE) => {
+          upE.stopPropagation();
+          document.removeEventListener("mousemove", handleMove);
+          document.removeEventListener("mouseup", handleUp);
+        };
+        document.addEventListener("mousemove", handleMove);
+        document.addEventListener("mouseup", handleUp);
+        handleColorAreaClick(e); // 初始点击也触发一次
+      });
+
+      hueStrip.addEventListener("click", handleHueClick);
+      hueStrip.addEventListener("mousedown", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const handleMove = (moveE) => {
+          moveE.stopPropagation();
+          handleHueClick(moveE);
+        };
+        const handleUp = (upE) => {
+          upE.stopPropagation();
+          document.removeEventListener("mousemove", handleMove);
+          document.removeEventListener("mouseup", handleUp);
+        };
+        document.addEventListener("mousemove", handleMove);
+        document.addEventListener("mouseup", handleUp);
+        handleHueClick(e); // 初始点击也触发一次
+      });
+
+      // 创建预设颜色
+      const presetColors = [
+        "#000000",
+        "#FFFFFF",
+        "#FF0000",
+        "#00FF00",
+        "#0000FF",
+        "#FFFF00",
+        "#FF00FF",
+        "#00FFFF",
+        "#808080",
+        "#FFB6C1",
+        "#FFC0CB",
+        "#FF69B4",
+        "#FF6347",
+        "#FFA500",
+        "#FFD700",
+        "#90EE90",
+        "#87CEEB",
+        "#4169E1",
+      ];
+
+      presetColors.forEach((color) => {
+        const swatch = document.createElement("div");
+        swatch.className = "builtin-preset-color-swatch";
+        swatch.style.backgroundColor = color;
+        swatch.title = color;
+        swatch.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const newHsl = hexToHSL(color);
+          currentH = newHsl.h;
+          currentS = newHsl.s;
+          currentL = newHsl.l;
+          currentFormat = "HEX";
+
+          formatToggleBtn.textContent = currentFormat;
+          updateInputDisplay();
+          huePicker.style.top = (currentH / 360) * 100 + "%";
+          drawColorArea();
+          updateColor();
+        });
+        presetContainer.appendChild(swatch);
+      });
+
+      console.log("[MGGA] 内置颜色选择器初始化完成");
+    };
+
+    // 立即初始化内置颜色选择器
+    initializeLibraries();
+
+    return panel;
+  }
+
+  /** 打开/关闭颜色选择器子面板（模块级） */
+  function toggleColorPickerPanel(colorBtn, colorName, defaultColor, onChange, onClose, refreshRealtimeStyles) {
+    // 关闭其他开放的面板
+    document.querySelectorAll(".custom-color-picker-panel").forEach((p) => {
+      if (p._closeHandler) {
+        document.removeEventListener("click", p._closeHandler);
+      }
+      if (p._resizeObserver) {
+        p._resizeObserver.disconnect();
+      }
+      p.remove();
+      // 如果面板有关联的按钮，清除引用
+      if (p._associatedBtn) {
+        p._associatedBtn._panel = null;
+      }
+    });
+
+    if (colorBtn._panel && document.body.contains(colorBtn._panel)) {
+      // 如果点击的是已经打开的按钮，上面的逻辑已经关闭它了，这里不需要额外操作
+      colorBtn._panel = null;
+    } else {
+      let panel;
+      try {
+        panel = createColorPickerPanel(
+            colorBtn,
+            colorName,
+            defaultColor,
+            onChange,
+            refreshRealtimeStyles,
+          );
+      } catch (err) {
+        console.error("[MGGA] createColorPickerPanel error:", err);
+        return;
+      }
+      panel._associatedBtn = colorBtn; // 建立双向引用以便清理
+
+      document.body.appendChild(panel);
+      colorBtn._panel = panel;
+
+      const repositionPanel = () => {
+        if (!document.body.contains(panel)) return;
+        placeFixedInViewport(panel, {
+          margin: 8,
+          centerY: false,
+          scrollable: true,
+          anchorRect: colorBtn.getBoundingClientRect(),
+        });
+      };
+      repositionPanel();
+
+      // 内容异步加载/尺寸变化时重新夹紧，保证始终在屏幕内
+      if (typeof ResizeObserver !== "undefined") {
+        let roRaf = 0;
+        const ro = new ResizeObserver(() => {
+          if (roRaf) cancelAnimationFrame(roRaf);
+          roRaf = requestAnimationFrame(repositionPanel);
+        });
+        ro.observe(panel);
+        panel._resizeObserver = ro;
+      }
+      // 双 rAF + 延迟兜底：等内置取色器等子内容完成布局
+      requestAnimationFrame(() => {
+        requestAnimationFrame(repositionPanel);
+      });
+      setTimeout(repositionPanel, 80);
+      setTimeout(repositionPanel, 250);
+
+      // 点击其他地方关闭面板
+      const closeHandler = (e) => {
+        // 检查是否点击了颜色按钮本身，如果是则不关闭（因为会再次打开）
+        if (e.target === colorBtn || colorBtn.contains(e.target)) return;
+
+        // 检查是否在面板内部点击
+        if (panel.contains(e.target)) return;
+
+        // 执行关闭
+        if (panel._resizeObserver) {
+          panel._resizeObserver.disconnect();
+        }
+        panel.remove();
+        colorBtn._panel = null;
+        document.removeEventListener("click", closeHandler);
+        if (typeof onClose === "function") onClose();
+      };
+      panel._closeHandler = closeHandler; // 保存引用以便外部清理
+      setTimeout(() => document.addEventListener("click", closeHandler), 0);
+    }
+  }
+
+  /**
+   * 绑定设置面板顶部的三个功能开关：图标识别 / 移动端布局修正 / 关键词高亮。
+   * 三者行为完全同构（读存储 → 绘制态 → 点击翻转 → 写存储 → 重新应用），
+   * 故合并为一次实现，避免三段近乎逐字重复的代码各自漂移。
+   */
+  function bindFeatureToggleButtons(dialog) {
+    const bindToggle = (selector, storageKey, reapplied) => {
+      const btn = dialog.querySelector(selector);
+      if (!btn) return;
+
+      let enabled = GM_getValue(storageKey, true);
+      const paint = (on) => {
+        btn.classList.toggle("disabled", !on);
+        btn.innerHTML = on ? "✓" : "✕";
+        btn.title = on ? i18n.t("enabledTitle") : i18n.t("disabledTitle");
+      };
+
+      paint(enabled);
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        enabled = !enabled;
+        GM_setValue(storageKey, enabled);
+        paint(enabled);
+        reapplied();
+      });
+    };
+
+    bindToggle("#svgToggleBtn", "svgEnabled", processAssets);
+    bindToggle("#mobileFixToggleBtn", "mobileLayoutFix", applyMobileLayoutFix);
+    bindToggle("#highlightToggleBtn", "highlightEnabled", processAssets);
+  }
+
+  /**
+   * 自定义关键词规则控制器（模块级工厂）。
+   * 掌管「预设架构关键词 + 用户自定义关键词」的渲染、增删、颜色覆盖与持久化。
+   * 原先这约 200 行内联在 createColorPickerDialog 里，只依赖 dialog 与
+   * refreshRealtimeStyles 两个外部引用，故整体上提。
+   */
+  function createKeywordRulesController(dialog, refreshRealtimeStyles) {
+    // 处理自定义关键词列表的渲染
+    const deletedDefaults = GM_getValue("deletedDefaults", []);
+    const defaultColorOverrides = GM_getValue("defaultColorOverrides", {});
+    let rules = [
+      ...archKeywords
+        .filter((arch) => !deletedDefaults.includes(arch))
+        .map((arch) => ({
+          text: arch,
+          color: defaultColorOverrides[arch] || null,
+          isDefault: true,
+          isOverridden: !!defaultColorOverrides[arch],
+          pendingDelete: false,
+        })),
+      ...GM_getValue("userCustomKeywords", []).map((kw) => ({
+        text: kw.text,
+        color: kw.color,
+        isDefault: false,
+        isOverridden: false,
+        pendingDelete: false,
+      })),
+    ];
+
+    const archClassNameOf = (text) =>
+      `arch-${text.toLowerCase().replace(/[^a-zA-Z0-9]/g, "-")}`;
+
+    const clearPendingDeletes = (rerender = true) => {
+      let changed = false;
+      rules.forEach((r) => {
+        if (r.pendingDelete) {
+          r.pendingDelete = false;
+          changed = true;
+        }
+      });
+      if (changed && rerender) renderKeywords();
+    };
+
+    const regenerateHighlight = () => {
+      const existingStyle = document.getElementById("MGGA-custom-arch-style");
+      if (existingStyle) existingStyle.remove();
+      initializeArchStyles();
+      // 同步主题色缓存（自定义关键词/覆盖可能已变化）
+      refreshThemeColorsCache();
+      if (typeof processAssets === "function") {
+        queryAssetRows().forEach((item) => {
+          if (item.dataset.highlightProcessed === "true") {
+            const link = queryAssetLink(item);
+            if (link && item._originalFileName) {
+              // 恢复时重建 GitHub 原生结构（span.text-bold 包裹），保持加粗样式
+              const restoreSpan = document.createElement("span");
+              restoreSpan.className = "text-bold";
+              restoreSpan.textContent = item._originalFileName;
+              link.replaceChildren(restoreSpan);
+            }
+            item.dataset.highlightProcessed = "false";
+          }
+        });
+        setTimeout(() => processAssets(), 10);
       }
     };
+
+    const renderKeywords = () => {
+      const container = dialog.querySelector("#customKeywordsContainer");
+      if (!container) return;
+      container.innerHTML = "";
+
+      if (rules.length === 0) {
+        const emptyHint = document.createElement("div");
+        emptyHint.className = "keyword-empty-hint";
+        emptyHint.textContent = i18n.t("noKeywords");
+        container.appendChild(emptyHint);
+        return;
+      }
+
+      rules.forEach((rule, index) => {
+        const item = document.createElement("div");
+        const classes = ["custom-keyword-item"];
+        if (rule.isDefault) classes.push("default-keyword-item");
+        if (rule.pendingDelete) classes.push("pending-delete");
+        item.className = classes.join(" ");
+
+        const useAutoColor = rule.isDefault && !rule.isOverridden;
+        const safeRuleText = escapeHtmlText(rule.text);
+        const swatchClass = useAutoColor
+          ? `keyword-color-swatch arch-highlight ${archClassNameOf(rule.text)}`
+          : "keyword-color-swatch";
+        const swatchStyle = useAutoColor
+          ? ""
+          : `background-color: ${sanitizeHexColor(rule.color, "#ffeb3b")};`;
+        const actionClass = rule.pendingDelete
+          ? "keyword-action-btn keyword-restore"
+          : "keyword-action-btn keyword-remove";
+        const actionIcon = rule.pendingDelete ? "↩" : "×";
+        const actionTitle = rule.pendingDelete
+          ? i18n.t("restore")
+          : i18n.t("deleteRule");
+
+        item.innerHTML = `
+                    <span class="${swatchClass}" style="${swatchStyle}" data-swatch="${index}" title="${i18n.t("keywordColor")}"></span>
+                    <span class="keyword-text">${safeRuleText}</span>
+                    ${rule.isDefault ? `<span class="keyword-default-tag">${i18n.t("defaultTag")}</span>` : ""}
+                    <span class="${actionClass}" data-action="${index}" title="${actionTitle}">${actionIcon}</span>
+                `;
+        container.appendChild(item);
+      });
+
+      // 关键词区变化后同步一次视口限高（保持 CSS 居中，不改 transform）
+      syncDialogViewportLimit(dialog);
+
+      // 颜色编辑：点击色块
+      container.querySelectorAll(".keyword-color-swatch").forEach((sw) => {
+        sw.addEventListener("click", (e) => {
+          e.stopPropagation();
+          clearPendingDeletes(false);
+          const idx = parseInt(sw.dataset.swatch);
+          const rule = rules[idx];
+          if (!rule) return;
+          const startColor =
+            rule.isOverridden || !rule.isDefault
+              ? rule.color || "#ffeb3b"
+              : window.getComputedStyle(sw).backgroundColor || "#ffeb3b";
+          toggleColorPickerPanel(
+            sw,
+            i18n.t("keywordColor"),
+            startColor,
+            (newColor) => {
+              rule.color = newColor;
+              rule.isOverridden = true;
+            },
+            () => {
+              renderKeywords();
+            },
+            refreshRealtimeStyles,
+          );
+        });
+      });
+
+      // 删除/恢复：点击操作按钮
+      container.querySelectorAll(".keyword-action-btn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const idx = parseInt(btn.dataset.action);
+          const rule = rules[idx];
+          if (!rule) return;
+          rule.pendingDelete = !rule.pendingDelete;
+          renderKeywords();
+        });
+      });
+    };
+
+    // 初始化渲染
+    renderKeywords();
+
+    // 添加新关键词按钮功能
+    const addKeywordBtn = dialog.querySelector("#addKeywordBtn");
+    const newKeywordInput = dialog.querySelector("#newKeywordInput");
+    const newKeywordColorBtn = dialog.querySelector("#newKeywordColorBtn");
+
+    if (newKeywordColorBtn) {
+      newKeywordColorBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleColorPickerPanel(
+          newKeywordColorBtn,
+          i18n.t("keywordColor"),
+          newKeywordColorBtn.style.backgroundColor || "#ffeb3b",
+          undefined,
+          undefined,
+          refreshRealtimeStyles,
+        );
+      });
+    }
+
+    if (addKeywordBtn && newKeywordInput && newKeywordColorBtn) {
+      addKeywordBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        clearPendingDeletes();
+        const text = newKeywordInput.value.trim();
+        const color =
+          newKeywordColorBtn.style.backgroundColor || "#ffeb3b";
+
+        // 将可能存在的 RGB 格式转换为 HEX 以保持一致性
+        const hexColor = sanitizeHexColor(cssColorToHex(color), "#ffeb3b");
+
+        if (text) {
+          const existingIndex = rules.findIndex(
+            (kw) => kw.text.toLowerCase() === text.toLowerCase(),
+          );
+          if (existingIndex !== -1) {
+            rules[existingIndex].color = hexColor;
+            rules[existingIndex].isOverridden = true;
+            rules[existingIndex].pendingDelete = false;
+          } else {
+            rules.push({
+              text,
+              color: hexColor,
+              isDefault: false,
+              isOverridden: false,
+              pendingDelete: false,
+            });
+          }
+
+          newKeywordInput.value = "";
+          renderKeywords();
+        }
+      });
+    }
+
+    /** 持久化规则：预设删除项 / 预设颜色覆盖 / 用户自定义关键词 */
+    const persist = () => {
+      const savedUserKeywords = [];
+      const savedOverrides = {};
+      const savedDeletedDefaults = [...GM_getValue("deletedDefaults", [])];
+      rules.forEach((r) => {
+        if (r.pendingDelete) {
+          if (r.isDefault) {
+            if (!savedDeletedDefaults.includes(r.text)) {
+              savedDeletedDefaults.push(r.text);
+            }
+          }
+        } else {
+          if (r.isDefault) {
+            if (r.isOverridden && r.color) {
+              savedOverrides[r.text] = cssColorToHex(r.color) || r.color;
+            }
+          } else {
+            savedUserKeywords.push({
+              text: r.text,
+              color: cssColorToHex(r.color) || r.color || "#ffeb3b",
+            });
+          }
+        }
+      });
+      GM_setValue("userCustomKeywords", savedUserKeywords);
+      GM_setValue("defaultColorOverrides", savedOverrides);
+      GM_setValue("deletedDefaults", savedDeletedDefaults);
+    };
+
+    return {
+      renderKeywords,
+      regenerateHighlight,
+      clearPendingDeletes,
+      persist,
+      hasPendingDelete: () => rules.some((r) => r.pendingDelete),
+    };
+  }
+
+
+  // 创建颜色选择器对话框
+  function createColorPickerDialog() {
+    // 关键修复：如果对话框已存在，先移除旧的，确保每次打开都是全新的状态和作用域
+    const existingDialog = document.querySelector(".color-picker-dialog");
+    if (existingDialog) {
+      detachViewportAdaptation(existingDialog);
+      existingDialog.remove();
+    }
+
+    // 获取当前主题
+    const currentTheme = getCurrentTheme();
+
+    // 获取当前主题的自定义颜色（如果存在）
+    let customColors = GM_getValue(
+      `customColors${currentTheme.charAt(0).toUpperCase() + currentTheme.slice(1)}`,
+      null,
+    );
+
+    // 如果没有自定义颜色，使用当前主题的默认颜色
+    if (!customColors) {
+      customColors =
+        currentTheme === "dark" ? defaultColorsDark : defaultColorsLight;
+    }
+
+    // 创建新的对话框（显式声明，避免在 IIFE 非严格模式下泄漏为隐式全局 window.dialog）
+    const dialog = document.createElement("div");
+    dialog.className = "color-picker-dialog";
+    dialog.innerHTML = buildSettingsDialogHTML(customColors);
+
+    document.body.appendChild(dialog);
+
+    // 打开对话框并应用滑入动画
+    openDialog(dialog);
+
+    // 获取元素引用
+    const oddRowColorBtn = dialog.querySelector("#oddRowColorBtn");
+    const evenRowColorBtn = dialog.querySelector("#evenRowColorBtn");
+    const hoverColorBtn = dialog.querySelector("#hoverColorBtn");
+
+    // === 禁用/启用上色功能切换按钮 ===
+    const colorToggleState = {
+      odd: GM_getValue("colorToggleOdd", true),
+      even: GM_getValue("colorToggleEven", true),
+      hover: GM_getValue("colorToggleHover", true),
+    };
+
+    // 实时刷新样式的函数
+    const refreshRealtimeStyles = () => {
+      // 每次刷新都从 DOM 中实时获取最新的按钮引用，确保闭包不会失效
+      const btnOdd = dialog.querySelector("#oddRowColorBtn");
+      const btnEven = dialog.querySelector("#evenRowColorBtn");
+      const btnHover = dialog.querySelector("#hoverColorBtn");
+
+      applyColors({
+        colors: {
+          oddRowColor: cssColorToHex(btnOdd ? btnOdd.style.backgroundColor : "", "#000000"),
+          evenRowColor: cssColorToHex(btnEven ? btnEven.style.backgroundColor : "", "#000000"),
+          hoverColor: cssColorToHex(btnHover ? btnHover.style.backgroundColor : "", "#000000"),
+        },
+        toggles: colorToggleState,
+      });
+    };
+
+    // 三个功能开关（图标识别 / 移动端布局修正 / 关键词高亮）
+    // 见模块级 bindFeatureToggleButtons：三段原本近乎逐字重复，已合并为一次实现
+    bindFeatureToggleButtons(dialog);
+
+    // 获取元素引用
+    const closeBtn = dialog.querySelector(".color-picker-close");
+    const cancelBtn = dialog.querySelector(".cancel-button");
+    const confirmBtn = dialog.querySelector(".confirm-button");
+    const resetBtn = dialog.querySelector(".reset-button");
+
+    // HEX 验证/规范化统一使用全局 sanitizeHexColor（见文件头部工具区）
+
+    const defaultColors =
+      getCurrentTheme() === "dark" ? defaultColorsDark : defaultColorsLight;
+
+    // 创建自定义color picker子面板
+    // createColorPickerPanel / toggleColorPickerPanel 已抽至模块级作用域
+    // （见 createColorPickerDialog 之前的同名函数声明）
 
     // 颜色按钮点击事件
     const handleColorBtnClick = (e, btn, key, displayName) => {
@@ -2318,7 +2585,14 @@
                           (key === "odd" ? customColors.oddRowColor :
                            key === "even" ? customColors.evenRowColor :
                            customColors.hoverColor);
-      toggleColorPickerPanel(btn, displayName || key, currentColor);
+      toggleColorPickerPanel(
+        btn,
+        displayName || key,
+        currentColor,
+        undefined,
+        undefined,
+        refreshRealtimeStyles,
+      );
     };
 
     oddRowColorBtn.addEventListener("click", (e) => {
@@ -2416,228 +2690,8 @@
       }
     });
 
-    // 处理自定义关键词列表的渲染
-    const deletedDefaults = GM_getValue("deletedDefaults", []);
-    const defaultColorOverrides = GM_getValue("defaultColorOverrides", {});
-    let rules = [
-      ...archKeywords
-        .filter((arch) => !deletedDefaults.includes(arch))
-        .map((arch) => ({
-          text: arch,
-          color: defaultColorOverrides[arch] || null,
-          isDefault: true,
-          isOverridden: !!defaultColorOverrides[arch],
-          pendingDelete: false,
-        })),
-      ...GM_getValue("userCustomKeywords", []).map((kw) => ({
-        text: kw.text,
-        color: kw.color,
-        isDefault: false,
-        isOverridden: false,
-        pendingDelete: false,
-      })),
-    ];
-
-    const archClassNameOf = (text) =>
-      `arch-${text.toLowerCase().replace(/[^a-zA-Z0-9]/g, "-")}`;
-
-    const clearPendingDeletes = (rerender = true) => {
-      let changed = false;
-      rules.forEach((r) => {
-        if (r.pendingDelete) {
-          r.pendingDelete = false;
-          changed = true;
-        }
-      });
-      if (changed && rerender) renderKeywords();
-    };
-
-    const regenerateHighlight = () => {
-      const existingStyle = document.getElementById("MGGA-custom-arch-style");
-      if (existingStyle) existingStyle.remove();
-      if (typeof window.initializeArchStyles === "function") {
-        window.initializeArchStyles();
-      }
-      // 同步主题色缓存（自定义关键词/覆盖可能已变化）
-      refreshThemeColorsCache();
-      if (typeof processAssets === "function") {
-        document
-          .querySelectorAll(".Box.Box--condensed li.Box-row")
-          .forEach((item) => {
-            if (item.dataset.highlightProcessed === "true") {
-              const link = item.querySelector(
-                "div.d-flex.flex-justify-start.col-12.col-lg-6 a",
-              );
-              if (link && item._originalFileName) {
-                // 恢复时重建 GitHub 原生结构（span.text-bold 包裹），保持加粗样式
-                const restoreSpan = document.createElement("span");
-                restoreSpan.className = "text-bold";
-                restoreSpan.textContent = item._originalFileName;
-                link.replaceChildren(restoreSpan);
-              }
-              item.dataset.highlightProcessed = "false";
-            }
-          });
-        setTimeout(() => processAssets(), 10);
-      }
-    };
-
-    const renderKeywords = () => {
-      const container = dialog.querySelector("#customKeywordsContainer");
-      if (!container) return;
-      container.innerHTML = "";
-
-      if (rules.length === 0) {
-        const emptyHint = document.createElement("div");
-        emptyHint.className = "keyword-empty-hint";
-        emptyHint.textContent = i18n.t("noKeywords");
-        container.appendChild(emptyHint);
-        return;
-      }
-
-      rules.forEach((rule, index) => {
-        const item = document.createElement("div");
-        const classes = ["custom-keyword-item"];
-        if (rule.isDefault) classes.push("default-keyword-item");
-        if (rule.pendingDelete) classes.push("pending-delete");
-        item.className = classes.join(" ");
-
-        const useAutoColor = rule.isDefault && !rule.isOverridden;
-        const safeRuleText = escapeHtmlText(rule.text);
-        const swatchClass = useAutoColor
-          ? `keyword-color-swatch arch-highlight ${archClassNameOf(rule.text)}`
-          : "keyword-color-swatch";
-        const swatchStyle = useAutoColor
-          ? ""
-          : `background-color: ${sanitizeHexColor(rule.color, "#ffeb3b")};`;
-        const actionClass = rule.pendingDelete
-          ? "keyword-action-btn keyword-restore"
-          : "keyword-action-btn keyword-remove";
-        const actionIcon = rule.pendingDelete ? "↩" : "×";
-        const actionTitle = rule.pendingDelete
-          ? i18n.t("restore")
-          : i18n.t("deleteRule");
-
-        item.innerHTML = `
-                    <span class="${swatchClass}" style="${swatchStyle}" data-swatch="${index}" title="${i18n.t("keywordColor")}"></span>
-                    <span class="keyword-text">${safeRuleText}</span>
-                    ${rule.isDefault ? `<span class="keyword-default-tag">${i18n.t("defaultTag")}</span>` : ""}
-                    <span class="${actionClass}" data-action="${index}" title="${actionTitle}">${actionIcon}</span>
-                `;
-        container.appendChild(item);
-      });
-
-      // 关键词区变化后同步一次视口限高（保持 CSS 居中，不改 transform）
-      syncDialogViewportLimit(dialog);
-
-      // 颜色编辑：点击色块
-      container.querySelectorAll(".keyword-color-swatch").forEach((sw) => {
-        sw.addEventListener("click", (e) => {
-          e.stopPropagation();
-          clearPendingDeletes(false);
-          const idx = parseInt(sw.dataset.swatch);
-          const rule = rules[idx];
-          if (!rule) return;
-          const startColor =
-            rule.isOverridden || !rule.isDefault
-              ? rule.color || "#ffeb3b"
-              : window.getComputedStyle(sw).backgroundColor || "#ffeb3b";
-          toggleColorPickerPanel(
-            sw,
-            i18n.t("keywordColor"),
-            startColor,
-            (newColor) => {
-              rule.color = newColor;
-              rule.isOverridden = true;
-            },
-            () => {
-              renderKeywords();
-            },
-          );
-        });
-      });
-
-      // 删除/恢复：点击操作按钮
-      container.querySelectorAll(".keyword-action-btn").forEach((btn) => {
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const idx = parseInt(btn.dataset.action);
-          const rule = rules[idx];
-          if (!rule) return;
-          rule.pendingDelete = !rule.pendingDelete;
-          renderKeywords();
-        });
-      });
-    };
-
-    // 初始化渲染
-    renderKeywords();
-
-    // 添加新关键词按钮功能
-    const addKeywordBtn = dialog.querySelector("#addKeywordBtn");
-    const newKeywordInput = dialog.querySelector("#newKeywordInput");
-    const newKeywordColorBtn = dialog.querySelector("#newKeywordColorBtn");
-
-    if (newKeywordColorBtn) {
-      newKeywordColorBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        toggleColorPickerPanel(
-          newKeywordColorBtn,
-          i18n.t("keywordColor"),
-          newKeywordColorBtn.style.backgroundColor || "#ffeb3b",
-        );
-      });
-    }
-
-    if (addKeywordBtn && newKeywordInput && newKeywordColorBtn) {
-      addKeywordBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        clearPendingDeletes();
-        const text = newKeywordInput.value.trim();
-        const color =
-          newKeywordColorBtn.style.backgroundColor || "#ffeb3b";
-
-        // 将可能存在的 RGB 格式转换为 HEX 以保持一致性
-        const rgbToHex = (rgb) => {
-          if (rgb.startsWith("#")) return rgb;
-          const match = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
-          if (match) {
-            return (
-              "#" +
-              [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])]
-                .map((x) => x.toString(16).padStart(2, "0"))
-                .join("")
-                .toUpperCase()
-            );
-          }
-          return rgb;
-        };
-
-        const hexColor = sanitizeHexColor(rgbToHex(color), "#ffeb3b");
-
-        if (text) {
-          const existingIndex = rules.findIndex(
-            (kw) => kw.text.toLowerCase() === text.toLowerCase(),
-          );
-          if (existingIndex !== -1) {
-            rules[existingIndex].color = hexColor;
-            rules[existingIndex].isOverridden = true;
-            rules[existingIndex].pendingDelete = false;
-          } else {
-            rules.push({
-              text,
-              color: hexColor,
-              isDefault: false,
-              isOverridden: false,
-              pendingDelete: false,
-            });
-          }
-
-          newKeywordInput.value = "";
-          renderKeywords();
-        }
-      });
-    }
+    // 关键词规则控制器（模块级工厂，见 createKeywordRulesController）
+    const keywordRules = createKeywordRulesController(dialog, refreshRealtimeStyles);
 
     // 确认按钮功能 - 修复：只保存到当前主题
     confirmBtn.addEventListener("click", (e) => {
@@ -2645,36 +2699,21 @@
       // 动态获取当前主题
       const saveTheme = getCurrentTheme();
 
-      // 定义转换函数
-      const rgbToHex = (rgb) => {
-        if (!rgb || rgb === "transparent") return "";
-        if (rgb.startsWith("#")) return rgb;
-        const match = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
-        if (match) {
-          return (
-            "#" +
-            [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])]
-              .map((x) => x.toString(16).padStart(2, "0"))
-              .join("")
-              .toUpperCase()
-          );
-        }
-        return rgb;
-      };
+      // 颜色转换统一走模块级 cssColorToHex（空值/transparent 返回 ""，便于下方降级判断）
 
       // 直接从按钮元素的 style 属性获取最新值
       const btnOdd = dialog.querySelector("#oddRowColorBtn");
       const btnEven = dialog.querySelector("#evenRowColorBtn");
       const btnHover = dialog.querySelector("#hoverColorBtn");
 
-      const newOddColor = rgbToHex(btnOdd ? btnOdd.style.backgroundColor : "");
-      const newEvenColor = rgbToHex(btnEven ? btnEven.style.backgroundColor : "");
-      const newHoverColor = rgbToHex(btnHover ? btnHover.style.backgroundColor : "");
+      const newOddColor = cssColorToHex(btnOdd ? btnOdd.style.backgroundColor : "");
+      const newEvenColor = cssColorToHex(btnEven ? btnEven.style.backgroundColor : "");
+      const newHoverColor = cssColorToHex(btnHover ? btnHover.style.backgroundColor : "");
 
       // 如果 style 为空，则作为降级方案获取计算样式
-      const finalOddColor = newOddColor || rgbToHex(btnOdd ? window.getComputedStyle(btnOdd).backgroundColor : "");
-      const finalEvenColor = newEvenColor || rgbToHex(btnEven ? window.getComputedStyle(btnEven).backgroundColor : "");
-      const finalHoverColor = newHoverColor || rgbToHex(btnHover ? window.getComputedStyle(btnHover).backgroundColor : "");
+      const finalOddColor = newOddColor || cssColorToHex(btnOdd ? window.getComputedStyle(btnOdd).backgroundColor : "");
+      const finalEvenColor = newEvenColor || cssColorToHex(btnEven ? window.getComputedStyle(btnEven).backgroundColor : "");
+      const finalHoverColor = newHoverColor || cssColorToHex(btnHover ? window.getComputedStyle(btnHover).backgroundColor : "");
 
       // 保存为当前主题的自定义颜色
       const newCustomColors = {
@@ -2695,32 +2734,7 @@
       GM_setValue("colorToggleHover", colorToggleState.hover);
 
       // 保存关键词规则（含预设的删除/颜色覆盖与用户规则）
-      const savedUserKeywords = [];
-      const savedOverrides = {};
-      const savedDeletedDefaults = [...GM_getValue("deletedDefaults", [])];
-      rules.forEach((r) => {
-        if (r.pendingDelete) {
-          if (r.isDefault) {
-            if (!savedDeletedDefaults.includes(r.text)) {
-              savedDeletedDefaults.push(r.text);
-            }
-          }
-        } else {
-          if (r.isDefault) {
-            if (r.isOverridden && r.color) {
-              savedOverrides[r.text] = rgbToHex(r.color) || r.color;
-            }
-          } else {
-            savedUserKeywords.push({
-              text: r.text,
-              color: rgbToHex(r.color) || r.color || "#ffeb3b",
-            });
-          }
-        }
-      });
-      GM_setValue("userCustomKeywords", savedUserKeywords);
-      GM_setValue("defaultColorOverrides", savedOverrides);
-      GM_setValue("deletedDefaults", savedDeletedDefaults);
+      keywordRules.persist();
 
       // 同步主题色缓存（高亮函数使用）
       refreshThemeColorsCache();
@@ -2729,7 +2743,7 @@
       applyColors(); // 动态更新颜色
 
       // 重新应用高亮及图标
-      regenerateHighlight();
+      keywordRules.regenerateHighlight();
     });
 
     // 点击其它按钮（非删除/恢复/确认）时撤销"待删除"标记
@@ -2740,8 +2754,8 @@
         if (!btn) return;
         if (btn.closest(".keyword-action-btn")) return;
         if (btn.id === "confirmDialogBtn") return;
-        if (rules.some((r) => r.pendingDelete)) {
-          clearPendingDeletes();
+        if (keywordRules.hasPendingDelete()) {
+          keywordRules.clearPendingDeletes();
         }
       },
       true,
@@ -2771,8 +2785,8 @@
         target = target.parentElement;
       }
       if (dialog && !dialog.contains(e.target)) {
-        if (rules.some((r) => r.pendingDelete)) {
-          clearPendingDeletes();
+        if (keywordRules.hasPendingDelete()) {
+          keywordRules.clearPendingDeletes();
           return;
         }
         closeDialog(dialog);
@@ -2889,7 +2903,7 @@
     GM_setValue("mobileLayoutFix", next);
     applyMobileLayoutFix();
   });
-  GM_registerMenuCommand(i18n.t("mobileNavDockMenuToggle"), () => {
+  GM_registerMenuCommand(i18n.t("navDockMenuToggle"), () => {
     toggleNavDockPanelFromMenu();
   });
   GM_registerMenuCommand(i18n.t("menuSettings"), createColorPickerDialog);
@@ -3427,31 +3441,6 @@
     return result;
   }
 
-  // HEX转RGB辅助函数
-  function hexToRgb(hex) {
-    let r = 0,
-      g = 0,
-      b = 0;
-    if (hex.length === 4) {
-      r = parseInt(hex[1] + hex[1], 16);
-      g = parseInt(hex[2] + hex[2], 16);
-      b = parseInt(hex[3] + hex[3], 16);
-    } else if (hex.length === 7) {
-      r = parseInt(hex.substring(1, 3), 16);
-      g = parseInt(hex.substring(3, 5), 16);
-      b = parseInt(hex.substring(5, 7), 16);
-    }
-    return { r, g, b };
-  }
-
-  // 判断颜色是否偏暗
-  function isDarkColor(hex) {
-    const { r, g, b } = hexToRgb(hex);
-    // 使用YIQ公式判断亮度
-    const yiq = (r * 299 + g * 587 + b * 114) / 1000;
-    return yiq < 128; // 小于128认为是暗色
-  }
-
   // ===== 基于识别算法 v2 的图标兑底匹配 =====
   // 既有三重关键词规则（扩展名 → 压缩包系统词 → 全关键词）都未命中时，
   // 用 parseFileNameArchitecture 的 OS 归一识别（含 win64/win32/nt 等
@@ -3480,7 +3469,9 @@
   // 初始化样式和动态关键词的函数
   let allCombinedKeywords = [...archKeywords];
 
-  window.initializeArchStyles = function () {
+  // 收敛到 IIFE 内部：此前挂在 window 上但无任何外部消费者，
+  // 反而给页面脚本留下覆盖/探测面。
+  function initializeArchStyles() {
     let dynamicStyles = "";
 
     // 基础图标及静态样式
@@ -3490,7 +3481,8 @@
                 width: 1.5em; height: 1.5em; min-width: 1.5em;
                 vertical-align: middle; flex-shrink: 0; margin-right: 8px;
             }
-            .Box-row .d-flex.flex-justify-start.col-12.col-lg-6 {
+            .Box-row .d-flex.flex-justify-start.col-12.col-lg-6,
+            .Box-row > div.d-flex.flex-justify-start {
                 display: flex; align-items: center;
             }
             /* 架构关键词基础高亮样式 */
@@ -3622,11 +3614,11 @@
       ...customColorRules.map((k) => k.text),
       ...activeArchKeywords,
     ].sort((a, b) => b.length - a.length); // 确保长词优先匹配
-  };
+  }
 
   // 初始化样式（并同步主题色缓存，供高亮函数使用）
   refreshThemeColorsCache();
-  window.initializeArchStyles();
+  initializeArchStyles();
 
   // 高亮架构关键词（包含自定义关键词）
   function highlightArchKeywords(text) {
@@ -3669,25 +3661,102 @@
     return result;
   }
 
+  // === Release 资产列表选择器（集中管理 + 结构兜底）===
+  // 这些是 GitHub 的页面内部类名，不属于稳定契约。全部集中于此并在主选择器
+  // 失效时按 data-testid / 语义结构兜底，避免改版后整块功能静默失效；
+  // 将来改版也只需在这里改一处。
+  const ASSET_SELECTORS = {
+    row: ".Box.Box--condensed li.Box-row",
+    cell: "div.d-flex.flex-justify-start.col-12.col-lg-6",
+    link: "div.d-flex.flex-justify-start.col-12.col-lg-6 a",
+    listBox: ".Box.Box--condensed",
+  };
+
+  /** Release 资产容器（GitHub 新版稳定契约）与"资产链接特征" */
+  const ASSET_HOST_TESTID = '[data-testid="release-assets"]';
+  const ASSET_LINK_HINT =
+    /\/releases\/(?:latest\/)?download\/|\/archive\/|\/releases\/expanded_assets\//;
+
+  /**
+   * 全部 Release 资产行：主选择器 → 容器级兜底 → 特征级兜底。
+   *
+   * 兜底必须**严格收窄**（2026-09-21 事故）：历史实现含裸
+   * `ul[data-view-component] li.Box-row` / `section[data-testid=...] li`，
+   * 主选择器失配时会把页面其它无关 `li.Box-row`（动态流、贡献者列表等）
+   * 也当作资产行返回，而 `queryAssetCell` 的 `|| row` 兜底会让
+   * `link.innerHTML = ""` 直接清空无关行的内容 → 触发 React 重渲染 →
+   * 观察器再次调用 processAssets → 无限重试循环（本仓库已记录两次）。
+   */
+  function queryAssetRows(root = document) {
+    const primary = root.querySelectorAll(ASSET_SELECTORS.row);
+    if (primary.length) return primary;
+    // 兜底 1：只在 release-assets 容器内取行（容器本身就是稳定契约）
+    const scoped = root.querySelectorAll(
+      ASSET_HOST_TESTID + " li.Box-row, " + ASSET_HOST_TESTID + " li",
+    );
+    if (scoped.length) return scoped;
+    // 兜底 2：按"行内确有下载/归档链接"这一语义特征过滤，绝不裸选
+    return Array.from(
+      root.querySelectorAll(
+        "ul[data-view-component] li.Box-row, .Box.Box--condensed li.Box-row",
+      ),
+    ).filter((li) =>
+      Array.from(li.querySelectorAll("a[href]")).some((a) =>
+        ASSET_LINK_HINT.test(a.getAttribute("href") || ""),
+      ),
+    );
+  }
+
+  /**
+   * 资产行内的「文件名单元格」：主选择器 → 第一个 flex 起始容器 → 整行。
+   * 末位兜底保留 `row`：GitHub 改版时单元格类名可能整体更换（如仅剩
+   * `div.d-flex`），此时仍应能定位；安全性由**行选择收窄**与
+   * `queryAssetLink` 的可信度判定共同保证，不靠这里的 null 兜底。
+   */
+  function queryAssetCell(row) {
+    return (
+      row.querySelector(ASSET_SELECTORS.cell) ||
+      row.querySelector("div.d-flex.flex-justify-start") ||
+      row
+    );
+  }
+
+  /**
+   * 文件名链接：主选择器 → 单元格内首个 a。改版路径（主单元格类名失配）
+   * 下额外做可信度判定，宁可跳过也不误改无关节点 —— 历史上这里返回了
+   * 无关行的首个 a，紧接着 `link.innerHTML = ""` 清空其内容，触发 React
+   * 重渲染 → 观察器再调 processAssets → 无限重试循环。
+   */
+  function queryAssetLink(row, cell) {
+    const primaryCell = row.querySelector(ASSET_SELECTORS.cell);
+    if (primaryCell) {
+      return (
+        row.querySelector(ASSET_SELECTORS.link) ||
+        primaryCell.querySelector("a") ||
+        null
+      );
+    }
+    const link = (cell || row).querySelector("a");
+    if (!link) return null;
+    // 放行条件（任一）：1) 链接具备下载/归档特征；2) 链接位于可信的
+    // release-assets 容器内（覆盖改版初期/测试夹具中的占位 href）
+    if (ASSET_LINK_HINT.test(link.getAttribute("href") || "")) return link;
+    if (link.closest(ASSET_HOST_TESTID)) return link;
+    return null;
+  }
+
   // 统筹处理文件资源的SVG图标和高亮
   function processAssets() {
     const isSvgEnabled = GM_getValue("svgEnabled", true);
     const isHighlightEnabled = GM_getValue("highlightEnabled", true);
-    const assetItems = document.querySelectorAll(
-      ".Box.Box--condensed li.Box-row",
-    );
+    const assetItems = queryAssetRows();
 
     assetItems.forEach((item) => {
-      const link = item.querySelector(
-        "div.d-flex.flex-justify-start.col-12.col-lg-6 a",
-      );
-      if (!link) return;
+      const svgContainer = queryAssetCell(item);
+      const link = queryAssetLink(item, svgContainer);
+      if (!link || !svgContainer) return;
 
       const fileName = link.textContent;
-      const svgContainer = item.querySelector(
-        "div.d-flex.flex-justify-start.col-12.col-lg-6",
-      );
-      if (!svgContainer) return;
 
       // 缓存原始文件和Svg
       if (!item._originalFileName && fileName) {
@@ -3886,7 +3955,8 @@
     // 缩小监听范围：Release 资产所在主内容区，找不到时才兑底到 body
     const assetListRoot =
       document.querySelector("main") ||
-      document.querySelector(".Box.Box--condensed") ||
+      document.querySelector(ASSET_SELECTORS.listBox) ||
+      document.querySelector('[data-testid="release-assets"]') ||
       document.body;
     assetsObserver.observe(assetListRoot, {
       childList: true,
@@ -4210,22 +4280,32 @@
   window.addEventListener("resize", scheduleNavDockViewportCheck);
   window.addEventListener("orientationchange", scheduleNavDockViewportCheck);
 
-  // === 移动端仓库主页：左侧悬浮导航（复用 More 检测与下拉收割逻辑） ===
+  // === 仓库主页：左侧悬浮导航（复用 More 检测与下拉收割逻辑） ===
   // 策略：
-  // 1) 仅在移动端手机设备访问 /:owner/:repo 仓库主页时启用。
+  // 1) 在 /:owner/:repo 仓库主页启用，**所有设备**（含桌面）均可使用，不复按
+  //    视口/UA 判定；悬浮球常驻，面板由用户按需展开。
   // 2) 扫描主页所有含 More Toggle 的导航条形栏（全局头部 nav、仓库标签条 UnderlineNav、主内容区 nav 容器）。
-  // 3) 逐栏定位 More 触发器并收割其下拉面板内导航项（复用 findMoreTrigger / findMoreMenu / extractMenuItems / harvestMoreItems）。
-  // 4) 将各栏收割项与既有导航项按顺序合并、去重，渲染为左侧悬浮导航栏（悬浮球 + 可展开面板）。
+  // 3) 逐栏**免点击**读取导航项：直扫本栏锚点 + 读取预渲染的溢出副本
+  //    （[data-menu-item] / aria-controls 目标，见 readPrerenderedBarItems）。
+  // 4) 将各栏读取项按顺序合并、去重，渲染为左侧悬浮导航栏（悬浮球 + 可展开面板）。
   // 5) 不改动原生页面 DOM（原生 More 行为保持不变）；SPA 导航后按新路径重建。
-  // 6) 收割点击期间锁定页面滚动 + 每栏重试有预算上限：溢出项只存在于 More
-  //    菜单打开后的 portal 里（数据层拿不到带原生样式的节点），必须模拟点击
-  //    收割；但点击/Escape 会触发 primer-react 焦点还原引发页面滚动跳动，
-  //    失败栏无限重试会形成"顶部↔README 区"来回振荡（2026-09-19 实证）。
-  const NAV_DOCK_ID = "mgga-mobile-nav-dock";
-  const NAV_DOCK_TOGGLE_ID = "mgga-mobile-nav-dock-toggle";
-  const NAV_DOCK_STYLE_ID = "mgga-mobile-nav-dock-style";
+  // 6) 点击模拟已从主路径退役：溢出项自 SSR 首帧起就在 DOM 里，点击 More
+  //    不产生任何新信息（见 readPrerenderedBarItems 的证据链），却会触发
+  //    primer-react 焦点还原引发滚动跳动。点击流程仅在"某栏零点击一项都取
+  //    不到、且存在可见 More 触发器"时作为兜底启用（2026-09-21 免点击改造）。
+  // 7) 兜底闸门有三重限定（判定唯一入口 navDockBarClickAllowed）：非 dock 栏
+  //    不点、零点击已能取到项不点、**纯面包屑/上下文栏不点** —— 后者指
+  //    nav[aria-label="Breadcrumbs"] 这类锚点全为 owner/owner-repo 的栏，
+  //    其"零点击可得项"恒为 0，若不单独排除会被闸门永久放行，每会话点开其
+  //    无名图标按钮（仓库选择器 picker），把 picker 链接当导航项塞进面板
+  //    （2026-09-20~21 反复实证的重复项来源）。
+  const NAV_DOCK_ID = "mgga-nav-dock";
+  const NAV_DOCK_TOGGLE_ID = "mgga-nav-dock-toggle";
+  const NAV_DOCK_STYLE_ID = "mgga-nav-dock-style";
   let navDockObserver = null;
   let navDockDebounce = null;
+  /** 空结果后的延迟重试定时器（一次性，见 scheduleNavDockRetry） */
+  let navDockRetryTimer = null;
   let navDockBuilding = false;
   let navDockExpanded = false;
   /**
@@ -4244,7 +4324,20 @@
   /** 上次应用 dock 的路径，用于识别"进入新页面" */
   let navDockLastBuiltPath = null;
   /** 面板结构版本：DOM 结构变更时递增，旧面板强制重建一次 */
-  const NAV_DOCK_STRUCT_VER = "10";
+  const NAV_DOCK_STRUCT_VER = "13";
+  /**
+   * 续排自限守卫（2026-09-21 无限重扫修复）：
+   * navDockDirty —— 构建期间到达的 body 变更（此时观察器回调被
+   *   navDockBuilding 守卫吞掉），构建结束后必须补一轮，否则 React 注水
+   *   出来的头部 More 会永久失去收割机会。
+   * navDockRebuildStreak —— 连续"有进展"轮次计数；超过上限即停表。
+   *   真机实测（2026-09-21）：桌面全宽、所有导航项外显、无需下拉时，
+   *   "[MGGA] scan" 曾以 ~14 条/秒永不停止，主线程被持续唤醒、页面永不
+   *   进入空闲态，DevTools 控制台被刷屏看不到前端代码。
+   */
+  let navDockDirty = false;
+  let navDockRebuildStreak = 0;
+  const NAV_DOCK_MAX_REBUILD_STREAK = 5;
 
   /** 同步悬浮球与面板的展开态 UI（点击悬浮球与油猴菜单共用，过渡对齐 Release 设置面板） */
   function setNavDockExpanded(expanded) {
@@ -4258,7 +4351,7 @@
     }
     if (fab) {
       fab.setAttribute("aria-expanded", navDockExpanded ? "true" : "false");
-      fab.title = navDockExpanded ? i18n.t("mobileNavDockCollapse") : i18n.t("mobileNavDockExpand");
+      fab.title = navDockExpanded ? i18n.t("navDockCollapse") : i18n.t("navDockExpand");
       fab.setAttribute("aria-label", fab.title);
       // 面板展开时悬浮球像 Release 悬浮按钮被设置面板接管时一样右移淡出
       fab.classList.toggle("mgga-dock-fab-hidden", navDockExpanded);
@@ -4276,7 +4369,7 @@
         if (typeof GM_notification === "function") {
           GM_notification({
             text: i18n.t("navDockUnavailable"),
-            title: i18n.t("mobileNavDock"),
+            title: i18n.t("navDock"),
           });
         }
       } catch (_) {
@@ -4286,7 +4379,7 @@
     }
     // 悬浮球尚未出现（页面初始化中或早退）时先构建一次
     if (!document.getElementById(NAV_DOCK_TOGGLE_ID)) {
-      await applyMobileNavDock();
+      await applyNavDock();
     }
     if (!document.getElementById(NAV_DOCK_TOGGLE_ID)) {
       console.warn("[MGGA] nav dock: FAB unavailable after build");
@@ -4314,8 +4407,8 @@
     style.id = NAV_DOCK_STYLE_ID;
     style.setAttribute("data-mgga-mutation-guard", "1");
     style.textContent = `
-      /* MGGA: mobile repo home floating nav dock */
-      #mgga-mobile-nav-dock-toggle {
+      /* MGGA: repo home floating nav dock */
+      #mgga-nav-dock-toggle {
         position: fixed !important;
         left: 1em !important;
         top: 50% !important;
@@ -4338,24 +4431,24 @@
       }
 
       /* 对齐 Release 悬浮按钮：拖拽/显隐过渡节奏一致 */
-      #mgga-mobile-nav-dock-toggle {
+      #mgga-nav-dock-toggle {
         transition: opacity 0.4s ease, margin-left 0.4s ease, background 0.2s ease !important;
       }
 
       /* 面板展开时悬浮球像 Release 设置面板打开时一样右移淡出 */
-      #mgga-mobile-nav-dock-toggle.mgga-dock-fab-hidden {
+      #mgga-nav-dock-toggle.mgga-dock-fab-hidden {
         opacity: 0 !important;
         pointer-events: none !important;
         margin-left: 2em !important;
       }
 
-      #mgga-mobile-nav-dock-toggle > svg {
+      #mgga-nav-dock-toggle > svg {
         width: 18px !important;
         height: 18px !important;
         pointer-events: none !important;
       }
 
-      #mgga-mobile-nav-dock-toggle .mgga-nav-dock-badge {
+      #mgga-nav-dock-toggle .mgga-nav-dock-badge {
         position: absolute !important;
         top: -4px !important;
         right: -4px !important;
@@ -4374,7 +4467,7 @@
 
       /* 对齐 Release 设置面板：初始左侧屏外 + 淡出，展开滑入；
          垂直居中锚定，高度随内容自适应但绝不出屏 */
-      #mgga-mobile-nav-dock {
+      #mgga-nav-dock {
         position: fixed !important;
         left: 1em !important;
         top: 50% !important;
@@ -4400,7 +4493,7 @@
         transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease !important;
       }
 
-      #mgga-mobile-nav-dock.mgga-visible {
+      #mgga-nav-dock.mgga-visible {
         opacity: 1 !important;
         visibility: visible !important;
         pointer-events: auto !important;
@@ -4408,7 +4501,7 @@
       }
 
       /* 面板标题栏：对齐 Release 设置面板 header + 关闭按钮 */
-      #mgga-mobile-nav-dock .mgga-nav-dock-header {
+      #mgga-nav-dock .mgga-nav-dock-header {
         display: flex !important;
         align-items: center !important;
         justify-content: space-between !important;
@@ -4417,13 +4510,13 @@
         border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted, rgba(125, 125, 125, 0.25))) !important;
       }
 
-      #mgga-mobile-nav-dock .mgga-nav-dock-header-title {
+      #mgga-nav-dock .mgga-nav-dock-header-title {
         font-size: 13px !important;
         font-weight: 600 !important;
         color: var(--fgColor-muted, var(--color-fg-muted, #59636e)) !important;
       }
 
-      #mgga-mobile-nav-dock .mgga-nav-dock-header-version {
+      #mgga-nav-dock .mgga-nav-dock-header-version {
         font-size: 10px !important;
         font-weight: normal !important;
         color: var(--fgColor-muted, var(--color-fg-muted, #59636e)) !important;
@@ -4432,7 +4525,7 @@
         white-space: nowrap !important;
       }
 
-      #mgga-mobile-nav-dock .mgga-nav-dock-close {
+      #mgga-nav-dock .mgga-nav-dock-close {
         background: transparent !important;
         border: none !important;
         color: var(--fgColor-muted, var(--color-fg-muted, #59636e)) !important;
@@ -4443,7 +4536,7 @@
         line-height: 1.2 !important;
       }
 
-      #mgga-mobile-nav-dock .mgga-nav-dock-close:hover {
+      #mgga-nav-dock .mgga-nav-dock-close:hover {
         color: var(--fgColor-default, var(--color-fg-default, #1f2328)) !important;
         background: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(127, 127, 127, 0.18))) !important;
       }
@@ -4451,7 +4544,7 @@
       /* 克隆复用的原控件：布局由面板接管，视觉（配色/字号/内边距/hover）
          交给 GitHub 原生类（UnderlineNav-item 等），保证与页面无差异。
          行内溢出隐藏：克隆 nowrap 长文本不再横向撑开面板 */
-      #mgga-mobile-nav-dock a {
+      #mgga-nav-dock a {
         display: flex !important;
         align-items: center !important;
         width: 100% !important;
@@ -4462,7 +4555,7 @@
       }
 
       /* 手工兑底条目（无源锚点可克隆时）沿用原面板视觉 */
-      #mgga-mobile-nav-dock a.mgga-nav-dock-fallback {
+      #mgga-nav-dock a.mgga-nav-dock-fallback {
         gap: 8px !important;
         padding: 8px 10px !important;
         border-radius: 8px !important;
@@ -4473,13 +4566,13 @@
         background: transparent !important;
       }
 
-      #mgga-mobile-nav-dock a.mgga-nav-dock-fallback:hover,
-      #mgga-mobile-nav-dock a.mgga-nav-dock-fallback:active {
+      #mgga-nav-dock a.mgga-nav-dock-fallback:hover,
+      #mgga-nav-dock a.mgga-nav-dock-fallback:active {
         background: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(127, 127, 127, 0.18))) !important;
         text-decoration: none !important;
       }
 
-      #mgga-mobile-nav-dock a > svg {
+      #mgga-nav-dock a > svg {
         width: 16px !important;
         height: 16px !important;
         flex: 0 0 auto !important;
@@ -4487,14 +4580,14 @@
 
       /* 计数器胶囊：克隆自 GitHub 原生 .Counter，视觉样式由原生 CSS 生效；
          此处仅防缩水不覆盖观感 */
-      #mgga-mobile-nav-dock .Counter {
+      #mgga-nav-dock .Counter {
         flex: 0 0 auto !important;
         white-space: nowrap !important;
         display: inline-flex !important;
         align-items: center !important;
       }
 
-      #mgga-mobile-nav-dock .mgga-nav-dock-label {
+      #mgga-nav-dock .mgga-nav-dock-label {
         flex: 0 1 auto !important;
         min-width: 0 !important;
         overflow: hidden !important;
@@ -4505,8 +4598,8 @@
       /* 克隆条目内的文本节点：GitHub tab 文本有两种形态（data-content 或
          data-component=text）。仅防溢出（min-width+hidden+ellipsis），
          不拉伸 —— flex:1 会把短文本推离行首，破坏各项统一左对齐 */
-      #mgga-mobile-nav-dock a > span[data-content],
-      #mgga-mobile-nav-dock a > span[data-component='text'] {
+      #mgga-nav-dock a > span[data-content],
+      #mgga-nav-dock a > span[data-component='text'] {
         flex: 0 1 auto !important;
         min-width: 0 !important;
         overflow: hidden !important;
@@ -4514,7 +4607,7 @@
       }
 
       /* 跨栏轻微分割线：主题自适应，含栏名小标题 */
-      #mgga-mobile-nav-dock .mgga-nav-dock-divider {
+      #mgga-nav-dock .mgga-nav-dock-divider {
         display: flex !important;
         align-items: center !important;
         gap: 8px !important;
@@ -4523,7 +4616,7 @@
         padding-top: 4px !important;
       }
 
-      #mgga-mobile-nav-dock .mgga-nav-dock-divider-caption {
+      #mgga-nav-dock .mgga-nav-dock-divider-caption {
         font-size: 11px !important;
         line-height: 1.2 !important;
         color: var(--fgColor-muted, var(--color-fg-muted, #59636e)) !important;
@@ -4785,21 +4878,92 @@
     return items;
   }
 
-  async function harvestMoreItems(trigger) {
+  /**
+   * 免点击读取本栏"预渲染"的导航项。
+   *
+   * 依据（2026-09-21 六仓库 SSR 实测 + GitHub 自身 behaviors 源码逐字核对）：
+   * GitHub 的 .js-responsive-underlinenav 行为体（githubassets/assets/
+   * behaviors-*.js 模块 G7）每次只在可见项与菜单副本之间**切换可见性**：
+   *     item.style.visibility = overflow ? "hidden" : "";
+   *     document.querySelector(`[data-menu-item=${tab}]`).hidden = !overflow;
+   * 它**从不插入或生成菜单项节点** —— 溢出项自服务端首帧起就已在 DOM 中。
+   * 实测对照（vscode / node / iina / react / linux / kubernetes）：
+   * 直扫所得集合 ⊇ 本函数所得集合，且"本函数独有项"恒为空集 —— 即点击
+   * More 不产生任何新信息，其唯一实际效果是焦点还原与页面滚动跳动。
+   *
+   * 两类零点击来源（合并返回，顺序即 DOM 顺序；调用方负责去重）：
+   *  ① 本栏内的 [data-menu-item] 锚点：仓库标签栏的溢出副本，与可见项
+   *     [data-tab-item] 一一对应（6 仓库实测双向覆盖，7=7 / 8=8）。
+   *  ② 本栏 More 触发器 aria-controls 指向的下拉容器：覆盖"菜单被渲染到
+   *     本栏 nav 之外"的结构（登录态头部 react-partial / ActionMenu）。
+   *     容器位于本栏内部时跳过 —— 直扫已覆盖，重复提取无意义。
+   */
+  function readPrerenderedBarItems(bar) {
+    const out = [];
+    const seen = new Set();
+    const push = (a) => {
+      if (!(a instanceof HTMLAnchorElement)) return;
+      const href = a.getAttribute("href") || "";
+      if (!href || href.startsWith("javascript:")) return;
+      const label = a.getAttribute("aria-label") || navDockAnchorLabel(a);
+      if (!label || isMoreLabel(label)) return;
+      const key = href + "|" + label;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push({ href, label, source: a });
+    };
+
+    // ① SSR 直出的溢出菜单副本
+    bar.querySelectorAll("[data-menu-item]").forEach((node) => {
+      push(node instanceof HTMLAnchorElement ? node : node.querySelector("a[href]"));
+    });
+
+    // ② aria-controls 指向的预渲染下拉容器（仅当它不在本栏内时补取）
+    bar.querySelectorAll("[aria-controls]").forEach((btn) => {
+      if (!(btn instanceof HTMLElement)) return;
+      const id = btn.getAttribute("aria-controls");
+      if (!id) return;
+      const target = document.getElementById(id);
+      if (!target || bar.contains(target)) return;
+      target.querySelectorAll("a[href]").forEach(push);
+    });
+
+    return out;
+  }
+
+  /**
+   * 点击收割（**兜底路径，非主路径**）。
+   * 仅当某栏经 readPrerenderedBarItems + 直扫后**一项都取不到**、且存在
+   * 可见 More 触发器时才被调用（闸门见 buildNavDock 的 zeroClick 计数）。
+   * 现网 SSR 实测下该分支恒不触发；保留它是为"菜单项既不预渲染在 nav 内、
+   * 也不由 aria-controls 指认"的未知结构（如登录态头部改版）留一条活路。
+   */
+  async function harvestMoreItems(trigger, diag) {
     // 文件区 wrap 模式的 More 按钮常驻 display:none(data-overflow-mode=wrap,
     // 永不展开):点击它纯属浪费且其菜单(若有)由换行直扫覆盖,直接跳过
     if (trigger instanceof HTMLElement) {
       const triggerStyle = window.getComputedStyle(trigger);
       if (triggerStyle.display === "none" || triggerStyle.visibility === "hidden") {
+        if (diag) diag.skipped = "trigger-hidden";
         return [];
       }
       const rect = trigger.getBoundingClientRect();
-      if (rect.width === 0 && rect.height === 0) return [];
+      if (rect.width === 0 && rect.height === 0) {
+        if (diag) diag.skipped = "trigger-zero-size";
+        return [];
+      }
     }
     // 预检不带全局兜底：未点击时页面上其它菜单的可见残留会造成假成功
     let menu = findMoreMenu(trigger, false);
     let items = extractMenuItems(menu);
-    if (items.length) return items;
+    if (items.length) {
+      if (diag) {
+        diag.clicked = false;
+        diag.path = "precheck-menu-already-open";
+        diag.menu = navDockDescribeNode(menu);
+      }
+      return items;
+    }
 
     // 点击收割期间锁定页面滚动：More 触发器可能在视口外，click 打开与
     // Escape 关闭都会让 primer-react 把焦点还原/移交给触发器或菜单项，
@@ -4807,13 +4971,24 @@
     // 收割窗口内锁死 html 滚动，焦点还原滚不动页面，结束后立即恢复。
     lockPageScrollForHarvest();
     try {
-      return await harvestMoreItemsLocked(trigger);
+      return await harvestMoreItemsLocked(trigger, diag);
     } finally {
       unlockPageScrollForHarvest();
     }
   }
 
-  async function harvestMoreItemsLocked(trigger) {
+  /** 节点简述（诊断日志用）：tag#id.class(前 40 字) */
+  function navDockDescribeNode(el) {
+    if (!el) return "null";
+    return (
+      el.tagName.toLowerCase() +
+      (el.id ? "#" + el.id : "") +
+      "." +
+      String(el.className || "").slice(0, 40)
+    );
+  }
+
+  async function harvestMoreItemsLocked(trigger, diag) {
     // 注意:本函数与外层包装各自持有独立的 menu/items —— 拆分时若漏声明,
     // 非严格模式下赋值成隐式全局、读取未赋值变量直接抛 ReferenceError,
     // 会导致点击收割整栏失败且被上层 catch 静默吞掉(v2026.10.5-10.7 实证)。
@@ -4830,6 +5005,7 @@
     if (!originallyOpen) {
       try {
         trigger.click();
+        if (diag) diag.clicked = true; // 确实点了（区别于"本就展开"路径）
       } catch (_) {
         /* ignore */
       }
@@ -4845,6 +5021,7 @@
         await new Promise((r) => setTimeout(r, 250));
       }
       if (!items.length && menu) items = extractMenuItems(menu);
+      if (diag) diag.menu = navDockDescribeNode(menu);
       // 最终通用兜底：文档顺序中本触发器之后的第一个可见含锚点菜单/列表
       // （覆盖任意 portal 结构与 class 命名，如登录态头部 react-partial
       // 渲染的非标 ActionMenu）。仅收可见节点，避免抓到隐藏旧 portal。
@@ -4883,14 +5060,20 @@
       ) {
         try {
           trigger.click();
+          if (diag) diag.closedBySecondClick = true;
         } catch (_) {
           /* ignore */
         }
       }
     } else {
       // 本就展开：菜单应已可见，允许全局兜底但同样只收可见菜单
+      if (diag) {
+        diag.clicked = false;
+        diag.path = "trigger-reported-expanded";
+      }
       menu = findMoreMenu(trigger, true);
       if (menu && isVisibleMenu(menu)) items = extractMenuItems(menu);
+      if (diag) diag.menu = navDockDescribeNode(menu);
     }
     return items;
   }
@@ -4900,6 +5083,12 @@
   let navDockScrollLockCount = 0;
   let navDockScrollSnapY = 0;
   let navDockScrollSnapHandler = null;
+  /**
+   * 回弹抑制截止时刻：dock 条目点击的"立即定位"会瞬时移动滚动位置，
+   * 而 unlockPageScrollForHarvest 的 1.5s 宽限期回弹只认 snapY，
+   * 会把这次定位拉回原处。抑制窗口内不回弹。
+   */
+  let navDockScrollRebounceSuppressUntil = 0;
 
   /**
    * 锁定页面滚动：①html/body overflow hidden（挡用户输入滚动）；
@@ -4951,11 +5140,736 @@
     window.scrollTo(0, snapY);
     const graceEnd = Date.now() + 1500;
     const rebounce = () => {
+      // 用户主动定位（dock 条目点击的 scrollIntoView）优先于回弹：
+      // 抑制窗口内不回弹，否则"点了 README 刚滚过去就被拉回原处"。
+      if (Date.now() < navDockScrollRebounceSuppressUntil) return;
       if (Date.now() > graceEnd || window.scrollY === snapY) return;
       window.scrollTo(0, snapY);
       setTimeout(rebounce, 50);
     };
     setTimeout(rebounce, 50);
+  }
+
+  // === dock 条目点击：页内立即定位 / 交还 GitHub 原生 AJAX ===
+  /**
+   * 概览文件区块的 id 约定（GitHub 自己的页内锚点）：
+   *   `#readme-ov-file` / `#contributing-ov-file` / `#License-1-ov-file`
+   * 右侧 About→Resources 区就是用这些锚点跳文件区里已渲染的概览文件。
+   * 实证：.workbuddy/probe/iina.html（真实 SSR）第 311759/312621/314267 字节处。
+   */
+  const NAV_DOCK_OV_FILE_ANCHOR_RE = /-ov-file$/i;
+
+  /** 标签归一：只留字母数字与中日韩，用于跨命名匹配（"Readme" ↔ "README"） */
+  function navDockLabelKey(label) {
+    return String(label || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "");
+  }
+
+  /**
+   * 概览文件区块元素：id 以 -ov-file 结尾且与标签同前缀（readme ↔ readme-ov-file）。
+   *
+   * ⚠ 实测结论（2026-09-21，证据取自 GitHub 自身 bundle）：**正常情况下这个元素
+   * 不存在**。`-ov-file` 是 OverviewRepoFiles 组件的 React 路由键（见
+   * navDockHandleFileTabClick 的实证注释），只出现在 href/`aria-current`/`?tab=`
+   * 三处，页面里没有元素带这个 id。此函数保留为**尽力而为的额外候选**：真要
+   * 哪天 GitHub 把 id 挂上，定位会自动升级为"精确锚点"；挂不上也不影响主路径。
+   */
+  function navDockFindOvFileElement(key) {
+    if (!key) return null;
+    let found = null;
+    document.querySelectorAll("[id]").forEach((el) => {
+      if (found) return;
+      const id = el.id || "";
+      if (!NAV_DOCK_OV_FILE_ANCHOR_RE.test(id)) return;
+      if (navDockLabelKey(id).startsWith(key)) found = el;
+    });
+    return found;
+  }
+
+  /**
+   * 页面上 GitHub 自己的 `-ov-file` 锚点里，与该标签同名的那个 id。
+   * 右侧 About→Resources 区即 `<a href="#readme-ov-file">Readme</a>` —— 这是
+   * GitHub 自己的路由键（点击靠 hashchange 触发 tab 切换），比我们猜 slug 可靠。
+   * 注意：它命中的是 **id 字符串**（`?tab=` / hash 的取值），不代表存在该 id 的
+   * 元素 —— 取元素请一律走 `document.getElementById(...) || null` 的判空分支。
+   */
+  function navDockOvFileAnchorIdFor(key) {
+    if (!key) return "";
+    for (const a of document.querySelectorAll('a[href^="#"]')) {
+      const id = (a.getAttribute("href") || "").slice(1);
+      if (!id || !NAV_DOCK_OV_FILE_ANCHOR_RE.test(id)) continue;
+      if (a.closest("#" + NAV_DOCK_ID)) continue;
+      const t = navDockLabelKey(
+        a.getAttribute("aria-label") || normalizedText(a) || ""
+      );
+      if (t && t === key) return id;
+    }
+    return "";
+  }
+
+  /**
+   * 文件区里已渲染的概览文件正文块（README 等）。
+   * 选择器取自真实 SSR 实证：`#repos-split-pane-content`（文件区内容容器，
+   * id 稳定）+ `article.markdown-body.entry-content`（GitHub 渲染 markdown 的
+   * 固定组合类）。hashed 模块类名（OverviewRepoFiles-module__Box_3__*）不入选择器
+   * —— 构建哈希一变即失效。
+   */
+  function navDockOverviewArticleEl() {
+    return document.querySelector(
+      "#repos-split-pane-content article.markdown-body, " +
+        "#repos-split-pane-content .markdown-body, " +
+        "#repo-content-pjax-container article.markdown-body.entry-content"
+    );
+  }
+
+  /**
+   * 原锚点是否已被 React 接管：React 把 `__reactProps$…` / `__reactFiber$…`
+   * 挂成 DOM 节点的**自有属性**，而 `cloneNode` 不复制自有属性 —— 这既是
+   * "面板克隆点不动 React 客户端路由"的根因，也是这里唯一可靠的接管探针。
+   * 未接管的 `href="#"` 锚点交还点击只会让浏览器跳到页首（fragment 为空），
+   * 因此必须先探测再决定是否交还。
+   */
+  function navDockAnchorIsReactManaged(anchor) {
+    if (!anchor) return false;
+    try {
+      return Object.keys(anchor).some((k) => k.startsWith("__react"));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * 求条目的**页内目标元素**（能立即定位就不该重新加载页面）。
+   *
+   * 两个来源，**优先取已存在的元素**（顺序很关键：真实 SSR 下 GitHub 的
+   * `-ov-file` 锚点只有 href、目标 id 从未渲染，若只看 id 就会把点击判成
+   * "等渲染"，目标永远不会出现 → 点击变空操作）：
+   *   A) GitHub 自己的 `-ov-file` 路由键对应的 id（`a[href="#xxx-ov-file"]`）
+   *      所指元素 —— 实测该元素通常不存在，只留 id 供日志与"等渲染完再定位"；
+   *   B) 该条目是文件区**当前选中**的概览文件 tab（`aria-current`）时，
+   *      认领文件区里已渲染的 markdown 正文块。
+   *      这一条正是 README 的处境：README 是默认选中的 tab，正文就在页面上，
+   *      原实现却把 href 落成 `location.pathname`，点击等于"重载当前页"，
+   *      滚动位置清零 ⇒ 表现为"点了 README 却没能立即定位到 README"。
+   *      非选中 tab 的正文尚未换出，此函数**故意不认领**（否则会把 README 的
+   *      正文当成 License 的目标），交由 navDockHandleFileTabClick 先切后定位。
+   *
+   * @returns {{id:string, el:Element|null}|null} 两者皆无时返回 null
+   */
+  function navDockInPageTarget(item) {
+    if (!item) return null;
+    const key = navDockLabelKey(item.label);
+    if (!key) return null;
+
+    const id = navDockOvFileAnchorIdFor(key);
+    let el = id ? document.getElementById(id) : null;
+
+    if (!el) {
+      // 仅"当前选中"的概览文件 tab 才认领文件区正文块，否则会把 License 的
+      // 正文当成 README 的目标
+      const src = item.source;
+      const selected =
+        src instanceof HTMLAnchorElement &&
+        (src.hasAttribute("aria-current") || src.hasAttribute("data-selected"));
+      if (selected && isFileAreaTabLabel(item.label)) {
+        el = navDockOverviewArticleEl();
+      }
+    }
+    if (!id && !el) return null;
+    return { id: id || "", el: el || null };
+  }
+
+  /**
+   * 条目所属的栏。面板条目持有**原锚点**（item.source）且原锚点仍在文档里，
+   * 向上找最近的 nav 最可靠；仅当原锚点缺失/已脱离文档时按 aria-label 回退。
+   */
+  function navDockOwningBar(src) {
+    try {
+      if (src && src.closest) {
+        const bar = src.closest("nav");
+        if (bar) return bar;
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    return document.querySelector('nav[aria-label="Repository files"]');
+  }
+
+  /** 栏内当前选中 tab 的归一标签键（栏内没有选中态时返回 ""） */
+  function navDockBarSelectedKey(bar) {
+    if (!bar) return "";
+    const sel = bar.querySelector(
+      'a[aria-current], a[data-selected], [aria-selected="true"]'
+    );
+    if (!sel) return "";
+    return navDockLabelKey(
+      sel.getAttribute("aria-label") || normalizedText(sel) || ""
+    );
+  }
+
+  /**
+   * 内容区根容器：仓库页内容主体（含文件列表与正文）。
+   * `#repos-split-pane-content` 带 `tabindex="0"` + 同名 `data-selector`
+   * —— GitHub 用它标记"键盘可滚区域"，即**它自己就是滚动容器**，因此定位它
+   * 除了对齐外框，还得把它内部滚动一起归零（见 navDockScrollElementToTop）。
+   */
+  function navDockContentRootEl() {
+    return (
+      document.getElementById("repos-split-pane-content") ||
+      document.getElementById("repo-content-pjax-container") ||
+      document.querySelector("main") ||
+      null
+    );
+  }
+
+  /**
+   * 面板条目的落地路径是否**就是当前页**（已在 Code 页时点 Code、已在 Issues
+   * 页时点 Issues）。这类条目原生点击 = 一次同 URL 导航：Turbo/React Router
+   * 会重取并替换整块内容、再把滚动归零，用户感知就是"重载"。
+   * 既然目标页就是本页，正确行为是**一次导航都不发**，只把内容滚回顶部。
+   */
+  function navDockIsSamePageHref(item) {
+    const dest = (item && item.href) || "";
+    if (!dest) return false;
+    const norm = (p) => String(p || "").replace(/\/+$/, "") || "/";
+    try {
+      const u = new URL(dest, location.origin);
+      if (u.origin !== location.origin) return false;
+      return norm(u.pathname) === norm(location.pathname);
+    } catch (_) {
+      return norm(dest.split(/[?#]/)[0]) === norm(location.pathname);
+    }
+  }
+
+  /**
+   * 文件区 tab 的定位目标：真要存在的 `-ov-file` 元素（若有）→ 已渲染正文块
+   * → 内容区根容器。三级都有兜底，任何一级命中都不会让点击变成空操作。
+   */
+  function navDockFileTabLocateTarget(item) {
+    return (
+      navDockFindOvFileElement(navDockLabelKey(item && item.label)) ||
+      navDockOverviewArticleEl() ||
+      navDockContentRootEl()
+    );
+  }
+
+  /**
+   * 文件区 tab 是否已切到我们点的那个：栏内 `aria-current` 迁移过去即完成。
+   * 栏不可判（原锚点已脱离、找不到栏）时视作已完成 —— 不做无谓等待。
+   */
+  function navDockFileTabSwitched(bar, key) {
+    if (!bar || !key) return true;
+    return navDockBarSelectedKey(bar) === key;
+  }
+
+  // === 定位滚动引擎：显式分层 + 有界重定位 ===
+  //
+  // 用户反馈「Repositories 的三个导航每次定位都会发生下移而不是置顶」。
+  // 原因是 `el.scrollIntoView()` 一把梭：它会把**所有**祖先滚动容器一并滚，
+  // 而每层的偏移量按**同一份初始几何**一次性算完 —— GitHub 新版仓库页里
+  // 内容区自己就是 overflow 容器（`#repos-split-pane-content` 带 tabindex，
+  // 典型的"键盘可滚区域"），层数一多各层结果互相抵消，目标就停在视口偏下
+  // 而非顶部。这里改为显式分层计算：内层容器先滚（扣掉容器内"已贴顶"的
+  // 粘性子导航），窗口最后统一对齐（扣掉固定/粘性顶栏，并尊重站点自己的
+  // scroll-padding-top）。定位后再有界重定位 ~1.2s，抵消注水 / 焦点还原 /
+  // 粘性重排造成的二次滚动；一旦探测到用户自己在滚（滚轮/触摸/按键）立即
+  // 收手，绝不跟用户抢滚动条。
+  let navDockLocateToken = 0;
+  let navDockLocateUserMoved = false;
+  let navDockLocateWatchInstalled = false;
+  /** 最近一次定位的实测值（供 locate 日志与 drift 日志复用） */
+  let navDockLastLocateMeasure = null;
+
+  /** 用户主动滚动探测：只装一次，passive 不拦默认行为 */
+  function navDockInstallLocateWatch() {
+    if (navDockLocateWatchInstalled) return;
+    navDockLocateWatchInstalled = true;
+    const mark = () => {
+      navDockLocateUserMoved = true;
+    };
+    try {
+      window.addEventListener("wheel", mark, { passive: true, capture: true });
+      window.addEventListener("touchstart", mark, { passive: true, capture: true });
+      window.addEventListener("keydown", mark, true);
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  /**
+   * 顶部让位：固定/粘性顶栏（GitHub 全局头部）的实测高度，
+   * 与站点自身的 `scroll-padding-top` 取大者 —— 只有让位对了，
+   * "置顶"才等于"内容首行可见"。
+   */
+  function navDockStickyTopOffset() {
+    let off = 0;
+    const cands = document.querySelectorAll(
+      "header, [class*='js-header-wrapper'], [data-testid='repository-container-header']"
+    );
+    cands.forEach((el) => {
+      let cs = null;
+      try {
+        cs = getComputedStyle(el);
+      } catch (_) {
+        return;
+      }
+      if (cs.position !== "fixed" && cs.position !== "sticky") return;
+      const r = el.getBoundingClientRect();
+      if (r.height > 0 && r.top <= 1 && r.bottom > 1) off = Math.max(off, r.bottom);
+    });
+    try {
+      const sp = parseFloat(
+        getComputedStyle(document.documentElement).scrollPaddingTop || "0"
+      );
+      if (isFinite(sp) && sp > off) off = sp;
+    } catch (_) {
+      /* ignore */
+    }
+    return Math.round(off);
+  }
+
+  /**
+   * 容器内让位：目标上方**当前已贴在该容器顶部**的粘性条（文件区 tabs 等）。
+   * 不扣它，目标会被粘性条压住顶部；扣多了目标又不在顶部。
+   */
+  function navDockStickyOffsetWithin(container, el) {
+    const cr = container.getBoundingClientRect();
+    const er = el.getBoundingClientRect();
+    let off = 0;
+    const cands = container.querySelectorAll(
+      "nav, header, [style*='sticky'], [class*='sticky'], [class*='Sticky']"
+    );
+    cands.forEach((n) => {
+      if (n === el || n.contains(el) || el.contains(n)) return;
+      let cs = null;
+      try {
+        cs = getComputedStyle(n);
+      } catch (_) {
+        return;
+      }
+      if (cs.position !== "sticky" && cs.position !== "fixed") return;
+      const r = n.getBoundingClientRect();
+      if (r.height <= 0) return;
+      if (r.top > cr.top + 12) return; // 尚未贴顶，不参与让位
+      if (r.bottom > er.top + 4) return; // 位于目标之下，不遮挡
+      off = Math.max(off, r.bottom - cr.top);
+    });
+    return Math.round(Math.max(0, off));
+  }
+
+  /** 目标的可滚动祖先（内层 → 外层；window 不在此列，单独处理） */
+  function navDockScrollableAncestors(el) {
+    const out = [];
+    let n = el.parentElement;
+    let guard = 0;
+    while (n && n !== document.documentElement && guard++ < 40) {
+      let cs = null;
+      try {
+        cs = getComputedStyle(n);
+      } catch (_) {
+        cs = null;
+      }
+      const oy = cs ? cs.overflowY || cs.overflow || "" : "";
+      if (
+        /^(auto|scroll|overlay)$/.test(oy) &&
+        n.scrollHeight > n.clientHeight + 1
+      ) {
+        out.push(n);
+      }
+      n = n.parentElement;
+    }
+    return out;
+  }
+
+  /**
+   * 直接写窗口滚动位置：显式 `behavior:"instant"`（`"auto"` 会跟随 CSS 的
+   * `scroll-behavior: smooth`，动画中途被打断正是"停在下移位置"的常见成因），
+   * 并在 scrollTo 被覆写/吃掉时用 scrollTop 兜底。
+   */
+  function navDockSetWindowScrollTop(top) {
+    const x = typeof window.scrollX === "number" ? window.scrollX : 0;
+    try {
+      window.scrollTo({ top, left: x, behavior: "instant" });
+    } catch (_) {
+      try {
+        window.scrollTo(x, top);
+      } catch (__) {
+        /* ignore */
+      }
+    }
+    if (Math.abs((window.scrollY || 0) - top) > 2) {
+      try {
+        document.documentElement.scrollTop = top;
+      } catch (_) {
+        /* ignore */
+      }
+      try {
+        if (document.body) document.body.scrollTop = top;
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  }
+
+  /** 目标顶到视口顶部时，窗口应有的滚动位置（已扣让位并夹在可滚范围内） */
+  function navDockTargetScrollTop(el, offset) {
+    if (!el || !el.isConnected) return null;
+    const off = typeof offset === "number" ? offset : navDockStickyTopOffset();
+    const rect = el.getBoundingClientRect();
+    const y = window.scrollY || 0;
+    let top = Math.round(rect.top + y - off);
+    const doc = document.documentElement;
+    const max = Math.max(0, (doc.scrollHeight || 0) - (window.innerHeight || 0));
+    if (top < 0) top = 0;
+    if (max > 0 && top > max) top = max;
+    return top;
+  }
+
+  /**
+   * 分层滚动到目标：内层容器先各滚各的，目标自身若也是滚动容器则内部归零，
+   * 窗口最后统一对齐。
+   * @returns 实测值 {offset, top, y, elTop, inner, self}（供日志与断言）
+   */
+  function navDockScrollElementToTop(el) {
+    if (!el || !el.isConnected) return null;
+    const inner = navDockScrollableAncestors(el);
+    for (const c of inner) {
+      const cr = c.getBoundingClientRect();
+      const er = el.getBoundingClientRect();
+      const off = navDockStickyOffsetWithin(c, el);
+      const delta = Math.round(er.top - cr.top - off);
+      if (delta !== 0) {
+        try {
+          c.scrollTop = c.scrollTop + delta;
+        } catch (_) {
+          /* ignore */
+        }
+      }
+    }
+    // 目标自身就是滚动容器（如内容区 #repos-split-pane-content）：只对齐外框
+    // 是不够的 —— 它内部还停在半路，"回到内容顶部"就落了空。归零它自己的
+    // scrollTop，语义即"从该元素的开头显示"。
+    let selfReset = false;
+    try {
+      if (el.scrollHeight > el.clientHeight + 1 && el.scrollTop !== 0) {
+        el.scrollTop = 0;
+        selfReset = true;
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    const offset = navDockStickyTopOffset();
+    const top = navDockTargetScrollTop(el, offset);
+    if (top != null) navDockSetWindowScrollTop(top);
+    return {
+      offset,
+      top: top == null ? -1 : top,
+      y: Math.round(window.scrollY || 0),
+      elTop: Math.round(el.getBoundingClientRect().top),
+      inner: inner.length,
+      self: selfReset,
+    };
+  }
+
+  /**
+   * 定位后的有界重定位：目标被注水 / 焦点还原 / 粘性重排挪走时拉回顶部。
+   * 只在"用户没自己滚、目标还在文档里、且确实偏了 >2px"时才动。
+   */
+  function navDockStartLocateReassert(el, token) {
+    const deadline = Date.now() + 1200;
+    let frames = 0;
+    const step = () => {
+      if (token !== navDockLocateToken) return; // 已有更新的定位，让位
+      if (navDockLocateUserMoved) return; // 用户接管滚动，立即收手
+      if (!el.isConnected) return;
+      if (Date.now() > deadline) {
+        const m = navDockLastLocateMeasure;
+        if (m && m.reassert) {
+          console.info(
+            `[MGGA] nav dock: locate re-asserted ${m.reassert}x ` +
+              `(top=${m.top} y=${m.y} off=${m.offset}) — 定位后被别的滚动挪走过`
+          );
+        }
+        return;
+      }
+      if (++frames % 3 === 0) {
+        const want = navDockTargetScrollTop(el, navDockStickyTopOffset());
+        if (want != null && Math.abs((window.scrollY || 0) - want) > 2) {
+          navDockScrollElementToTop(el);
+          if (navDockLastLocateMeasure) {
+            navDockLastLocateMeasure.reassert =
+              (navDockLastLocateMeasure.reassert || 0) + 1;
+          }
+        }
+      }
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(step);
+      else setTimeout(step, 64);
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(step);
+    else setTimeout(step, 64);
+  }
+
+  /**
+   * 立即定位（瞬时跳转，不带动画）：要求"立即"，故不用平滑滚动。
+   * 同时把"收割滚动回弹"压制一小段时间 —— unlockPageScrollForHarvest 的
+   * 1.5s 宽限期回弹只认 snapY，会把用户主动定位的滚动拉回去。
+   * @returns 实测值（见 navDockScrollElementToTop），未定位时返回 null
+   */
+  function navDockScrollToTarget(el) {
+    if (!el || !el.isConnected) return null;
+    navDockInstallLocateWatch();
+    navDockLocateUserMoved = false;
+    const token = ++navDockLocateToken;
+    navDockScrollRebounceSuppressUntil = Date.now() + 2000;
+    const m = navDockScrollElementToTop(el);
+    navDockLastLocateMeasure = m;
+    navDockStartLocateReassert(el, token);
+    return m;
+  }
+
+  /**
+   * 有界轮询等待目标出现（AJAX 内容渲染完成后）再定位。
+   * @param findEl   返回目标元素（或 null）的取值函数
+   * @param timeoutMs 等待上限
+   * @param onTimeout 超时仍未命中时的回调（用于"交还点击后什么也没发生"的兜底）
+   */
+  function navDockScrollWhenReady(findEl, timeoutMs, onTimeout) {
+    const deadline = Date.now() + (timeoutMs || 1500);
+    const tick = () => {
+      let el = null;
+      try {
+        el = findEl();
+      } catch (_) {
+        /* ignore */
+      }
+      if (el) {
+        navDockScrollToTarget(el);
+        return;
+      }
+      if (Date.now() > deadline) {
+        if (typeof onTimeout === "function") {
+          try {
+            onTimeout();
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        return;
+      }
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(tick);
+      else setTimeout(tick, 64);
+    };
+    tick();
+  }
+
+  /**
+   * 定位决策日志：与 logNavDockClickDecision 同源，点击即自证走了哪条路。
+   * 带上实测滚动值（top=目标应有滚动位置 / y=实际 / off=顶部让位 /
+   * elTop=定位后目标视口坐标 / inner=参与滚动的内层容器数），
+   * 让"没置顶""被挪走"这类现象在日志里可判读，不必靠猜。
+   * @param m 实测值；传 null 表示本次没有定位（如 pass-through）；不传取最近一次
+   */
+  function logNavDockLocate(item, path, id, m) {
+    const mm = m === undefined ? navDockLastLocateMeasure : m;
+    const extra = mm
+      ? ` top=${mm.top} y=${mm.y} off=${mm.offset} elTop=${mm.elTop} inner=${mm.inner}` +
+        (mm.self ? " self=0" : "")
+      : "";
+    console.info(
+      `[MGGA] nav dock: locate "${String((item && item.label) || "").slice(
+        0,
+        24
+      )}" via=${path}${id ? ' id="' + id + '"' : ""}${extra} href="${String(
+        (item && item.href) || ""
+      ).slice(0, 60)}"`
+    );
+  }
+
+  /**
+   * 文件区概览 tab 点击（README / Contributing / License / Code of conduct…）：
+   * 先立即吸顶一次，再等"选中态迁移"（＝切换完成）后对新正文重新对齐一次。
+   *
+   * 为什么 README 一直是对的、其余 tab 会"下移一段距离"：
+   * README 是默认选中项，正文已在页面上 ⇒ 走路径 2 直接定位；其余 tab 要点击
+   * 后才换出正文，而旧版判断"切换完成"的依据是
+   * `getElementById("<tab>-ov-file")` —— 那个 id **从来不是元素 id**。
+   *
+   * 实证（取自 GitHub 自己的 bundle，本仓库 `.workbuddy/probe/code-view.js`）：
+   * `-ov-file` 是 OverviewRepoFiles 组件的 **React 路由键**，全库只出现在三处 ——
+   *   ① 侧栏 / 移动菜单的 `href="#contributing-ov-file"`（靠 hashchange 触发路由）
+   *   ② nav 项的 `aria-current` 比较值（`"readme-ov-file"===ep?"page":void 0`）
+   *   ③ `?tab=<id>` 查询参数（`setSearchParams({tab:id},{replace:true,
+   *      preventScrollReset:true})`）
+   * 组件把"切 tab"实现为 query 参数变更 + 禁止滚动重置，页面里**没有任何元素
+   * 带这个 id**。因此旧版必然等满 1500ms 超时、从不定位 ⇒ tab 切了、页面没动，
+   * 看上去就是"点 Contributing/License 只下移一段距离"。
+   *
+   * 现在：完成信号改为**选中态迁移**（栏内 `aria-current` 落到被点的 tab），
+   * 目标改为**已渲染的正文块**（退内容区根容器）。先立即吸顶是为了慢网络下
+   * 也有即时反馈，切换完成后补一次对齐把最终落点钉住。
+   * @returns 恒为 true（已接管）
+   */
+  function navDockHandleFileTabClick(event, anchor, item, srcAnchor, canDelegate) {
+    event.preventDefault();
+    const bar = navDockOwningBar(srcAnchor);
+    const key = navDockLabelKey(item && item.label);
+    const dest = (item && item.href) || "";
+    const hrefAtClick = location.href;
+    const locate = () => navDockScrollToTarget(navDockFileTabLocateTarget(item));
+
+    if (canDelegate && srcAnchor && srcAnchor.isConnected) {
+      try {
+        srcAnchor.click();
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    locate(); // 立即对齐一次：切换还在等路由数据时，用户已先落在文件区顶部
+
+    const deadline = Date.now() + 1800;
+    const tick = () => {
+      if (navDockFileTabSwitched(bar, key)) {
+        locate(); // 切换完成 → 对新正文重新对齐
+        logNavDockLocate(item, "file-tab", "", navDockLastLocateMeasure);
+        return;
+      }
+      if (Date.now() > deadline) {
+        // 切换始终没发生（未注水，React 没接住这次点击）→ 回放一次**面板锚点
+        // 自身**：它带真实 href，交 Turbo 软导航，仍然不是整页重载。
+        // 已接管时不回放，避免与 React 的路由撞车（双重导航）。
+        if (
+          !canDelegate &&
+          dest &&
+          dest !== location.pathname &&
+          location.href === hrefAtClick &&
+          anchor &&
+          anchor.isConnected
+        ) {
+          try {
+            anchor.setAttribute("data-mgga-replay", "1");
+            anchor.click();
+            anchor.removeAttribute("data-mgga-replay");
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        logNavDockLocate(
+          item,
+          canDelegate ? "file-tab-await" : "await-render",
+          "",
+          navDockLastLocateMeasure
+        );
+        return;
+      }
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(tick);
+      else setTimeout(tick, 64);
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(tick);
+    else setTimeout(tick, 64);
+    return true;
+  }
+
+  /**
+   * dock 条目点击分诊：**能页内定位就绝不导航；目标就是本页就连一次导航都不发；
+   * 需要导航时只走 GitHub 自己的软导航，绝不自己 location.assign（＝整页重载）。**
+   *
+   * 分诊路径：
+   *   1) 修饰键 / 非主键 / target=_blank → 不接管，交还浏览器原生（新标签页等）；
+   *   2) 页内目标已在 DOM（已渲染正文块 / `-ov-file` 元素若真存在）
+   *      → 接管，立即定位（不导航、不重载）。README 走此路：它是默认选中 tab，
+   *      正文本来就在页面上；
+   *   3) 文件区概览 tab 且原锚点是 `href="#"` 占位 → 接管，切换后对新正文吸顶
+   *      （见 navDockHandleFileTabClick）。覆盖 Contributing / License /
+   *      Code of conduct 等"要点一下才换出正文"的 tab；
+   *   4) 落地路径就是当前页（Code / Issues…）→ 接管，只把内容滚回顶部，
+   *      **一次导航都不发** —— 原生同 URL 导航会重取整块内容 + 滚动归零，
+   *      那正是用户口中的"重载"；
+   *   5) 其余（真实 URL 的社区文件链接、跨页 tab）→ **不接管**：面板锚点自身
+   *      就是真实 href，Turbo / React Router 的全局拦截器会接管它做软导航，
+   *      比我们替换更保真。
+   *
+   * 反例一（上一轮）：等不到目标时执行 `location.assign(item.href)` —— 那是
+   * **整页重载**。用户实测「点 LICENSE 会跳到 /blob/develop/LICENSE」就是它干的：
+   * 面板 href 由 resolveFileAreaTabHref 解析而来，恰好等于该 URL。
+   * 反例二（本轮）：把 `-ov-file` 当作元素 id 来等待（见
+   * navDockHandleFileTabClick 的实证注释）⇒ 必然超时 ⇒ 切了 tab 却从不定位。
+   *
+   * 静态回归闸：本函数体内不得出现 `location.assign/replace`（冒烟测试直接断言）。
+   * @returns 是否已接管本次点击（true 表示调用方无需再处理）
+   */
+  function handleNavDockItemClick(event, anchor, item) {
+    if (!event || event.defaultPrevented) return false;
+    if (event.button !== 0) return false;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+      return false;
+    if (!item) return false;
+    // 回放点击（见路径 3/5 的兜底）不再拦截，否则会自己吞掉自己
+    if (anchor && anchor.hasAttribute("data-mgga-replay")) return false;
+
+    const src = item.source;
+    const srcAnchor = src instanceof HTMLAnchorElement ? src : null;
+    if (srcAnchor) {
+      const tgt = (srcAnchor.getAttribute("target") || "").toLowerCase();
+      if (tgt && tgt !== "_self") return false;
+    }
+
+    const hit = navDockInPageTarget(item);
+    // 占位 tab：源锚点 href="#" 的 React 客户端路由项（README/License/…）
+    const placeholderTab =
+      !!srcAnchor && srcAnchor.getAttribute("href") === "#";
+    const canDelegate =
+      !!srcAnchor &&
+      srcAnchor.isConnected &&
+      navDockAnchorIsReactManaged(srcAnchor);
+
+    // 路径 2：页内目标已渲染 → 直接定位，连导航都不需要
+    if (hit && hit.el) {
+      event.preventDefault();
+      logNavDockLocate(item, "in-page", hit.id, navDockScrollToTarget(hit.el));
+      return true;
+    }
+
+    // 路径 3：文件区概览 tab 的占位锚点 → 切换 tab 后对新正文吸顶
+    if (isFileAreaTabLabel(item.label) && placeholderTab) {
+      return navDockHandleFileTabClick(event, anchor, item, srcAnchor, canDelegate);
+    }
+
+    // 路径 4：落地路径就是当前页（Code / Issues…）→ 不重载，只回内容顶部
+    if (navDockIsSamePageHref(item)) {
+      event.preventDefault();
+      logNavDockLocate(
+        item,
+        "same-page-top",
+        "",
+        navDockScrollToTarget(navDockContentRootEl())
+      );
+      return true;
+    }
+
+    // 路径 5：其余 → 不接管，交还 Turbo / React Router 的全局软导航。
+    // （只在需要时才顺手等目标出现，不改 URL、不吞点击）
+    const narrowFinder = () => {
+      if (hit && hit.id) {
+        const el = document.getElementById(hit.id);
+        if (el) return el;
+      }
+      return navDockFindOvFileElement(navDockLabelKey(item.label));
+    };
+    navDockScrollWhenReady(narrowFinder, 1500, null);
+    logNavDockLocate(item, "pass-through", (hit && hit.id) || "", null);
+    return false;
+  }
+
+  /** 给面板条目挂上分诊点击（克隆节点与手工回退节点共用） */
+  function attachNavDockItemClick(anchor, item) {
+    if (!anchor || !item) return anchor;
+    anchor.addEventListener("click", (e) => {
+      handleNavDockItemClick(e, anchor, item);
+    });
+    return anchor;
   }
 
   /** 导航条形栏的稳定缓存键：aria-label + 类名前缀 */
@@ -4966,12 +5880,58 @@
     return aria + "|" + cls;
   }
 
+  /**
+   * 面包屑/上下文档的 aria-label 特征（登录态头部 AppHeader 的
+   * `nav[aria-label="Breadcrumbs"]` 即此类）。
+   * 这类栏的锚点全是 owner / owner-repo 链接，会被取数链整体当作面包屑剔除，
+   * 因此它的"零点击可得项"**恒为 0** —— 若让它留在点击闸门里，闸门会永远
+   * 为它放行，每会话必然点开它的图标按钮（仓库选择器 picker），把 picker 里
+   * 的链接当导航项塞进面板（2026-09-20 起反复实证的重复/垃圾项来源，
+   * 见 docs/fix-2026-09-20-dock-duplicate-tabs.md）。
+   */
+  const NAV_DOCK_CONTEXT_BAR_LABEL_RE = /breadcrumb|面包屑|当前位置/i;
+
+  /**
+   * 该栏是否属于 dock 的索引范围：排除页脚、全局 Marketing 头部
+   * （未登录首页大菜单，不是仓库导航）与面包屑/上下文档（见上）。
+   * 供 collectRepoHomeNavItems 索引与点击闸门**共用** —— 非 dock 栏既不索引
+   * 也不允许点击，避免闸门因"该栏没有 zeroClick 计数"而漏放触发器。
+   */
+  function isDockEligibleBar(bar) {
+    if (!bar) return false;
+    if (bar.closest("footer")) return false;
+    const aria = (bar.getAttribute("aria-label") || "").trim();
+    const lower = aria.toLowerCase();
+    if (lower === "global" || lower === "footer") return false;
+    if (NAV_DOCK_CONTEXT_BAR_LABEL_RE.test(aria)) return false;
+    return true;
+  }
+
   /** 视口宽度分桶（100px 一桶）：桌面切移动端调试时桶变化触发重收割 */
   function navDockViewportBucket() {
     return Math.round(window.innerWidth / 100);
   }
 
-  function collectRepoHomeNavItems(navList, harvestedByBar) {
+  /**
+   * 合并各栏导航项为 dock 数据源。
+   *
+   * 每栏的取数顺序：直扫锚点 → 预渲染溢出副本（readPrerenderedBarItems）
+   * → 点击收割产物（harvestedByBar，兜底，通常为空）。三条来源都经同一
+   * pushItem 去重链，按标签归一 + 目的地归一双保险。
+   *
+   * @param navList        导航栏元素数组
+   * @param harvestedByBar 点击收割产物（barKey → items），兜底用，可为 null
+   * @param statsOut       可选出参：
+   *                       - zeroClickItems: Map<barKey, count> 每栏"零点击即可
+   *                         取到"的项数。buildNavDock 用它作为点击闸门 —— 本栏
+   *                         只要 >0 就永不进入点击流程。
+   *                       - barBuckets: Map<Element, buckets> 每栏直扫的逐条
+   *                         过滤分桶（kept/hidden/ariaHidden/breadcrumb/…）。
+   *                         闸门用它识别"纯面包屑栏"（锚点全被剔除且触发器
+   *                         无可访问名 ⇒ 点了只会拿到 picker 链接），并作为
+   *                         点击决策日志的证据链。
+   */
+  function collectRepoHomeNavItems(navList, harvestedByBar, statsOut) {
     const items = [];
     const seen = new Set();
     /** 规范化标签 → 已收录 href(跨栏同名去重) */
@@ -5118,9 +6078,7 @@
     // 遍历每个导航条形栏，按 DOM 顺序索引既有导航项
     (navList || []).forEach((nav) => {
       // 全局 Marketing 头部（未登录首页大菜单）与页脚不属仓库导航
-      if (nav.closest("footer")) return;
-      const navAria = (nav.getAttribute("aria-label") || "").toLowerCase();
-      if (navAria === "global" || navAria === "footer") return;
+      if (!isDockEligibleBar(nav)) return;
 
       // 记录当前栏归属（分组与收割重试用）
       currentBarKey = navBarKey(nav);
@@ -5128,28 +6086,87 @@
         nav.getAttribute("aria-label") ||
         navDockAnchorLabel(nav.querySelector("a[href]")) ||
         "";
+      /** 本栏零点击可得项数（直扫 + 预渲染），供点击闸门判定 */
+      let zeroClickCount = 0;
+      /**
+       * 本栏直扫分桶：逐条记录锚点被哪一条过滤规则剔除。
+       * 两个用途：① 点击闸门判定"纯面包屑/上下文栏"（kept=0 且锚点全被剔除）；
+       * ② 点击决策日志的证据链。仅在本轮真正点击时打印，常态零成本。
+       * **任何新增过滤条件都必须在这里记一笔**，否则日志与真实取数结果脱节，
+       * 诊断价值归零。
+       */
+      const buckets = {
+        total: 0,
+        kept: 0,
+        hidden: 0,
+        ariaHidden: 0,
+        outside: 0, // footer / dock 自身
+        moreLabel: 0,
+        breadcrumb: 0,
+        prerendered: 0,
+        sampleRejected: "",
+      };
+      const reject = (a, why) => {
+        buckets[why]++;
+        if (!buckets.sampleRejected) {
+          buckets.sampleRejected = String(a.outerHTML || "")
+            .replace(/\s+/g, " ")
+            .slice(0, 200);
+        }
+      };
 
       nav.querySelectorAll("a[href]").forEach((a) => {
         if (!(a instanceof HTMLAnchorElement)) return;
+        buckets.total++;
         // 文件区白名单占位 tab：即使 GitHub 在窄视口下隐藏了所在 li，
         // 也在 dock 中保留（可解析真实路由；换行模式下这些项在页面上
         // 无任何入口，dock 提供它们正是补充导航）
         const isFileTab = isFileAreaPlaceholderTab(a);
-        if (a.matches("[hidden]") && !isFileTab) return;
+        if (a.matches("[hidden]") && !isFileTab) return reject(a, "hidden");
         // 隐藏包装元素（UnderlineNav wrap spacer 等）内的内容不索引
-        if (!isFileTab && a.closest('[aria-hidden="true"]')) return;
-        if (a.closest("footer")) return;
+        if (!isFileTab && a.closest('[aria-hidden="true"]'))
+          return reject(a, "ariaHidden");
+        if (a.closest("footer")) return reject(a, "outside");
         // 跳过 dock 自身条目与标题栏关闭按钮等
-        if (a.closest(`#${NAV_DOCK_ID}`)) return;
+        if (a.closest(`#${NAV_DOCK_ID}`)) return reject(a, "outside");
         const label = a.getAttribute("aria-label") || navDockAnchorLabel(a);
-        if (isMoreLabel(label)) return;
+        if (isMoreLabel(label)) return reject(a, "moreLabel");
         // 面包屑类条目（owner、owner/repo、页内锚点）无导航意义，剔除
-        if (isBreadcrumbish(a)) return;
+        if (isBreadcrumbish(a)) return reject(a, "breadcrumb");
+        zeroClickCount++;
+        buckets.kept++;
         pushItem(a.getAttribute("href"), label, a);
       });
 
+      // 免点击补足：本栏预渲染的溢出副本（[data-menu-item] 与 aria-controls
+      // 目标）。仓库标签栏的溢出项就藏在 nav 内的 li[data-menu-item][hidden]
+      // 里 —— hidden 挂在 li 上、不在 a 上，上面的直扫其实已能拿到；此处
+      // 覆盖的是"菜单被渲染到本栏 nav 之外"的结构（登录态头部）。
+      const prerendered = readPrerenderedBarItems(nav);
+      buckets.prerendered = prerendered.length;
+      prerendered.forEach((it) => {
+        zeroClickCount++;
+        pushItem(it.href, it.label, it.source);
+      });
+
+      if (statsOut && statsOut.zeroClickItems) {
+        statsOut.zeroClickItems.set(currentBarKey, zeroClickCount);
+        if (statsOut.barBuckets) {
+          // 按**栏元素**键存：元素身份在一轮内稳定，免疫 React 对
+          // className / aria-label 的改写（字符串键会因此查不到而误判 0）
+          statsOut.barBuckets.set(nav, {
+            ...buckets,
+            barKey: currentBarKey,
+            barLabel: currentBarLabel,
+            zeroClick: zeroClickCount,
+          });
+        }
+      }
+
       // 本栏 More 下拉收割项紧跟在本栏可见项之后：溢出项在 GitHub 侧
-      // 本就位于本栏尾部，按栏归位可还原正确的导航顺序
+      // 本就位于本栏尾部，按栏归位可还原正确的导航顺序。
+      // 注：这是**兜底**来源，现网 SSR 下 readPrerenderedBarItems 已全量覆盖，
+      // 该 Map 通常为空；保留仅为未知结构留活路。
       const barHarvest = harvestedByBar && harvestedByBar.get(navBarKey(nav));
       if (barHarvest) {
         barHarvest.forEach((it) => pushItem(it.href, it.label, it.source));
@@ -5324,6 +6341,163 @@
   }
 
   /**
+   * 廉价结构签名：只统计"栏 + 栏内锚点 href"，**不收敕、不点击、不打印日志**。
+   * 用于在重扫之前判断"这一轮是否可能有新东西" —— 缓存定稿后的稳态下每轮
+   * 成本 O(栏数 × 锚点数)，零副作用，是控制台刷屏/主线程持续唤醒的第一道闸。
+   */
+  function navDockCheapSignature(navBars) {
+    const parts = [];
+    for (const bar of navBars) {
+      const hrefs = [];
+      for (const a of bar.querySelectorAll("a[href]")) {
+        hrefs.push(a.getAttribute("href") || "");
+      }
+      parts.push(navBarKey(bar) + "\u0003" + hrefs.join("\u0004"));
+    }
+    const s = parts.join("\u0002");
+    let h = 0;
+    for (let i = 0; i < s.length; i++) {
+      h = (h * 31 + s.charCodeAt(i)) | 0;
+    }
+    return parts.length + ":" + h;
+  }
+
+  /**
+   * 触发器是否带可访问名（More / More items / Toggle navigation …）。
+   * 纯图标按钮（无可访问名，仅 aria-haspopup + aria-expanded）在页面上有
+   * 多重身份：可能是导航溢出触发器（旧版仓库标签栏的 action-menu 按钮），
+   * 也可能是仓库选择器 picker、元数据 kebab。闸门用它区分"有名字的导航开关"
+   * 与"无名图标的语境菜单"。
+   */
+  function navDockTriggerHasName(trigger) {
+    if (!trigger) return false;
+    const label =
+      trigger.getAttribute("aria-label") ||
+      trigger.getAttribute("data-more") ||
+      normalizedText(trigger);
+    return !!String(label || "").replace(/\s+/g, " ").trim();
+  }
+
+  /**
+   * 该栏当下是否允许进入点击收割 —— **点击路径的唯一判定入口**，
+   * navDockHasPendingTrigger / navDockEarliestRetryAt / 初次收割循环 /
+   * hasUndecided / missedBars 五处共用，保证"待收割判定"与"实际点击"同源。
+   *
+   * 允许条件（须全部满足）：
+   *   1) 属于 dock 索引范围（isDockEligibleBar：排除页脚、全局 Marketing 头部、
+   *      面包屑/上下文档）；
+   *   2) 本栏"零点击可得项"为 0 —— 否则溢出项已在 DOM 里，点击零收益；
+   *   3) 存在触发器；
+   *   4) 不是"纯面包屑/上下文栏"：锚点一个都没留下（kept=0）**且**触发器没有
+   *      可访问名。典型样本是登录态 AppHeader 的 `nav[aria-label="Breadcrumbs"]`
+   *      —— 它的锚点只有 owner / owner-repo，被取数链整体当面包屑剔除，
+   *      因此"零点击可得项"恒为 0，条件 2 永远为真；点开它的无名图标按钮
+   *      拿到的是仓库选择器 picker 里的链接，作为"导航项"塞进面板只会变成
+   *      重复/垃圾项（2026-09-20 起连续多轮实证，见
+   *      docs/fix-2026-09-20-dock-duplicate-tabs.md）。
+   *      保留条件：栏内**一个锚点都没有**（结构未知、菜单可能全靠 JS 注入，
+   *      如登录态头部 react-partial）或触发器**有可访问名**（More / Toggle
+   *      navigation）时仍允许点击 —— 保留兜底活路，不因噎废食。
+   *
+   * @param bar        候选栏
+   * @param trigger    findMoreTrigger(bar) 的结果（由调用方算好传入，避免重复查询）
+   * @param zeroClick  Map<barKey, 零点击可得项数>
+   * @param barBuckets Map<Element, 直扫分桶>（collectRepoHomeNavItems 产出）
+   * @returns 允许点击该栏的触发器时返回 true
+   */
+  function navDockBarClickAllowed(bar, trigger, zeroClick, barBuckets) {
+    if (!isDockEligibleBar(bar)) return false;
+    if (zeroClick && (zeroClick.get(navBarKey(bar)) || 0) > 0) return false;
+    if (!trigger) return false;
+    const buckets = barBuckets && barBuckets.get(bar);
+    if (
+      buckets &&
+      buckets.total > 0 &&
+      buckets.kept === 0 &&
+      !navDockTriggerHasName(trigger)
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * 点击决策日志：**只在真正决定点击时打印**，常态化零成本。
+   * 目的：一次点击即可自证"是哪一栏、闸门为何放行"。此前只有
+   * `harvest click #n ok on "?"` —— 栏名缺失，且该行是"收割结论"而非
+   * "确实点过"（harvestMoreItemsLocked 在触发器自报 expanded 时会跳过
+   * click 直接等菜单），排查只能逐字比对历史日志（2026-09-21 实证）。
+   */
+  function logNavDockClickDecision(bar, trigger, buckets) {
+    const b = buckets || {};
+    const trigLabel =
+      normalizedText(trigger) || trigger.getAttribute("aria-label") || "?";
+    console.info(
+      `[MGGA] nav dock: click decision bar="${
+        bar.getAttribute("aria-label") || "(no aria)"
+      }" key="${navBarKey(bar).slice(0, 48)}" anchors=${b.total || 0} kept=${
+        b.kept || 0
+      } hidden=${b.hidden || 0} ariaHidden=${b.ariaHidden || 0} outside=${
+        b.outside || 0
+      } moreLabel=${b.moreLabel || 0} breadcrumb=${b.breadcrumb || 0} prerendered=${
+        b.prerendered || 0
+      } trigger="${String(trigLabel).slice(0, 24)}"`
+    );
+    if (b.sampleRejected) {
+      console.info(`[MGGA] nav dock: rejected sample "${b.sampleRejected}"`);
+    }
+  }
+
+  /**
+   * 是否还存在"可点击但尚未收割"的触发器（廉价判定：不点击、不打印）。
+   * 与会话点击状态机同源，保证早短路不会吞掉真实的收割机会。
+   *
+   * @param zeroClick Map<barKey, 零点击可得项数>；某栏 >0 即视为"已覆盖"，
+   *                  永不进入点击流程 —— 这是免点击改造的核心闸门
+   *                  （点击 More 不产生任何 DOM 里没有的节点）。
+   * @param barBuckets Map<Element, 直扫分桶>，供 navDockClickableTrigger
+   *                  判定"纯面包屑/上下文栏"（点了只会有垃圾项）
+   */
+  function navDockHasPendingTrigger(navBars, session, zeroClick, barBuckets) {
+    if (!session) return true;
+    if (session.clickTotal >= NAV_DOCK_SESSION_MAX_CLICKS) return false;
+    for (const bar of navBars) {
+      const trigger = findMoreTrigger(bar);
+      if (!navDockBarClickAllowed(bar, trigger, zeroClick, barBuckets)) continue;
+      const st = session.clickState.get(trigger);
+      if (!st) return true; // 从未点击过：还有机会
+      if (st.ok) continue; // 已成功收割：不再点
+      if (st.count >= 2) continue; // 两次机会用尽：不再点
+      if (Date.now() - st.at >= 2500) return true; // 空结果后的唯一重试窗口已到
+    }
+    return false;
+  }
+
+  /**
+   * 最早可重试时刻（ms 时间戳）；无待重试触发器时返回 null。
+   * 用于把"空结果后的 2.5s 唯一重试"排成**一次性**定时器 —— 收窄 finally 的
+   * 无条件续排后，若没有别的唤醒源，这个重试窗口会永远等不到轮次
+   * （React 注水慢、菜单延迟挂载时曾靠它成功收割）。一次性排程有界：
+   * 每元素至多 2 次点击、全局至多 12 次，落地后即回报 null，不会成环。
+   */
+  function navDockEarliestRetryAt(navBars, session, zeroClick, barBuckets) {
+    if (!session) return null;
+    if (session.clickTotal >= NAV_DOCK_SESSION_MAX_CLICKS) return null;
+    let min = null;
+    for (const bar of navBars) {
+      // 与 navDockHasPendingTrigger 同一闸门：非 dock 栏、零点击已覆盖的栏、
+      // 纯面包屑/上下文栏都不参与重试
+      const trigger = findMoreTrigger(bar);
+      if (!navDockBarClickAllowed(bar, trigger, zeroClick, barBuckets)) continue;
+      const st = session.clickState.get(trigger);
+      if (!st || st.ok || st.count >= 2) continue;
+      const at = st.at + 2500;
+      if (min === null || at < min) min = at;
+    }
+    return min;
+  }
+
+  /**
    * 整体复用原控件：深克隆源锚点，图标/文本/原生计数器胶囊/主题样式全部保留。
    * 不移动原节点 —— GitHub React 需要原节点留在原位，克隆是安全且样式保真的折中。
    * 克隆后仅做净化：去重复 id/热键/分析属性、修正 # 占位 href、
@@ -5408,7 +6582,7 @@
     const panel = document.createElement("div");
     panel.id = NAV_DOCK_ID;
     panel.setAttribute("role", "navigation");
-    panel.setAttribute("aria-label", i18n.t("mobileNavDock"));
+    panel.setAttribute("aria-label", i18n.t("navDock"));
     panel.setAttribute("data-expanded", navDockExpanded ? "true" : "false");
     panel.classList.toggle("mgga-visible", navDockExpanded);
     panel.setAttribute("data-mgga-mutation-guard", "1");
@@ -5418,12 +6592,11 @@
     header.className = "mgga-nav-dock-header";
     const title = document.createElement("span");
     title.className = "mgga-nav-dock-header-title";
-    title.textContent = i18n.t("mobileNavDock");
+    title.textContent = i18n.t("navDock");
     // 脚本版本号（与设置面板一致）
     const verSpan = document.createElement("span");
     verSpan.className = "mgga-nav-dock-header-version";
-    verSpan.textContent =
-      "v" + (typeof GM_info !== "undefined" ? GM_info.script.version : "?");
+    verSpan.textContent = "v" + getScriptVersion();
     verSpan.title = "Make-GitHub-Great-Again";
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
@@ -5468,6 +6641,9 @@
       if (reused) {
         reused.title = item.label;
         reused.setAttribute("aria-label", item.label);
+        // 点击分诊：能页内定位就定位，目标可 AJAX 就交还原锚点，
+        // 否则保持原生 href 导航（见 handleNavDockItemClick）
+        attachNavDockItemClick(reused, item);
         frag.appendChild(reused);
         return;
       }
@@ -5507,6 +6683,7 @@
       if (counter) {
         a.appendChild(counter);
       }
+      attachNavDockItemClick(a, item);
       frag.appendChild(a);
     });
     panel.appendChild(frag);
@@ -5579,7 +6756,7 @@
     const fab = document.createElement("button");
     fab.id = NAV_DOCK_TOGGLE_ID;
     fab.type = "button";
-    fab.title = navDockExpanded ? i18n.t("mobileNavDockCollapse") : i18n.t("mobileNavDockExpand");
+    fab.title = navDockExpanded ? i18n.t("navDockCollapse") : i18n.t("navDockExpand");
     fab.setAttribute("aria-label", fab.title);
     fab.setAttribute("aria-expanded", navDockExpanded ? "true" : "false");
     fab.setAttribute("aria-controls", NAV_DOCK_ID);
@@ -5622,11 +6799,48 @@
   }
 
   async function buildNavDock() {
-    if (navDockBuilding) return;
+    if (navDockBuilding) {
+      // 构建期间到达的变更（首次构建时观察器尚未安装、或回调被守卫吞掉）
+      // 必须记账，构建结束后补一轮；否则 React 注水出来的头部 More 会
+      // 永久失去收割机会。
+      navDockDirty = true;
+      return;
+    }
     navDockBuilding = true;
+    /** 本轮是否有实质进展（面板重建 / 收割产物更新） */
+    let roundProgress = false;
+    /** 本轮结束后是否还有分批/重试收割需求 */
+    let roundPending = false;
+    /** 本轮上下文：finally 与 try 不共享块级作用域，需提升到函数作用域 */
+    let navBars = null;
+    let session = null;
+    /**
+     * 每栏零点击可得项数（barKey → count）。
+     * 必须提升到函数作用域：finally 里要用它做重试排程的闸门判定；
+     * 若用 const 声明在 try 内，finally 读取会抛 ReferenceError
+     * （与下方 navBars/session 同一坑，2026-09-21 冒烟测试实证）。
+     */
+    let zeroClick = null;
+    /**
+     * 每栏直扫分桶（Map<Element, buckets>）。按**栏元素**键：元素身份在一轮内
+     * 稳定，免疫 React 对 className / aria-label 的改写（用字符串键会因此查不到
+     * 而把该栏误判成"零点击可得项 = 0"，闸门随之误放 —— 与上一条同源）。
+     */
+    let barBuckets = null;
     try {
       // 不依赖全局头部 nav：移动端可能无头部 nav 元素，直接扫描所有导航条形栏
-      const navBars = findRepoHomeNavBars();
+      navBars = findRepoHomeNavBars();
+
+      // === 零点击可得性统计（免点击改造的总闸门）===
+      // 先以 harvestedByBar=null 跑一次合并，只取每栏"零点击即可取到"的项数。
+      // 某栏 >0 ⇒ 该栏的溢出项已在 DOM 里 ⇒ 点击 More 零收益，该栏永久退出
+      // 点击流程：既不会产生点击副作用，也不会因"从未点击过"而反复补收，
+      // 更不会让 session.byBar 定不了稿（后者正是 2026-09-21 自激励循环的
+      // 成因之一）。成本与 navDockCheapSignature 同级（都遍历一次本栏锚点）。
+      const zeroClickStats = { zeroClickItems: new Map(), barBuckets: new Map() };
+      collectRepoHomeNavItems(navBars, null, zeroClickStats);
+      zeroClick = zeroClickStats.zeroClickItems;
+      barBuckets = zeroClickStats.barBuckets;
 
       // === 一次性收割会话 ===
       // 用户语义：每次进入仓库页/刷新时只收割一次。会话键 = loadRun 序号 +
@@ -5635,7 +6849,7 @@
       // 完全不变，从根上杜绝重排流里的反复点击。
       const cacheKey = navDockLoadRunSeq + "#" + location.pathname;
       const prev = navDockHarvestSession;
-      const session =
+      session =
         prev && prev.key === cacheKey
           ? prev
           : {
@@ -5646,6 +6860,7 @@
             };
       if (session !== prev) {
         navDockHarvestSession = session;
+        clearNavDockRetry(); // 新会话开启：旧会话遗留的重试排程作废
       }
       /**
        * 每触发器元素状态机：每个元素至多点击 2 次 —— 首次点击后为空
@@ -5663,19 +6878,50 @@
         // 空结果后的唯一重试：延迟 ≥2.5s（等 React 重渲染/菜单挂载完成）
         return Date.now() - st.at >= 2500;
       };
-      const recordClick = (trigger, ok) => {
+      const recordClick = (trigger, ok, diag) => {
         const st = session.clickState.get(trigger) || { count: 0 };
         st.count++;
         st.at = Date.now();
         st.ok = ok;
         session.clickState.set(trigger, st);
         session.clickTotal++;
+        roundPending = true; // 状态机推进过，需再看一轮（受 12 次全局上限约束）
+        // 措辞取证：本行是**收割结论**，不等于"确实点过" ——
+        // harvestMoreItemsLocked 在触发器自报 aria-expanded="true" 时会跳过
+        // click 直接等菜单出现，命中预检/全局兜底同样不点击。clicks= 字段
+        // 说明本轮真实点击次数（0 / 1 开+1 关=2）。
+        const clicks = diag
+          ? (diag.clicked ? 1 : 0) + (diag.closedBySecondClick ? 1 : 0)
+          : null;
         console.info(
-          `[MGGA] nav dock: harvest click #${st.count} ${
+          `[MGGA] nav dock: harvest #${st.count} ${
             ok ? "ok" : "empty"
-          } on "${(normalizedText(trigger) || trigger.getAttribute("aria-label") || "?").slice(0, 24)}"`
+          } on "${(normalizedText(trigger) || trigger.getAttribute("aria-label") || "?").slice(0, 24)}"` +
+            (clicks === null ? "" : ` clicks=${clicks}`) +
+            (diag && diag.menu && diag.menu !== "null" ? ` menu="${diag.menu}"` : "") +
+            (diag && diag.skipped ? ` skipped=${diag.skipped}` : "")
         );
       };
+
+      // === 早短路（必须在任何重扫/日志/DOM 写入之前）===
+      // 条件：会话收割产物已定稿 + 面板结构版本一致 + 廉价结构签名一致 +
+      // 无待收割触发器。命中即本轮无事可做，直接返回。
+      // 这是"控制台被 [MGGA] scan 刷屏 / 页面永不空闲"的第一道闸：旧实现把
+      // 签名短路放在重扫**之后**，桌面全宽常态下每 200ms 白扫一遍全栏并打印，
+      // 真机实测 ~14 条/秒且永不停止（2026-09-21）。
+      // 免点击改造后：所有栏的 zeroClick 均 >0 ⇒ navDockHasPendingTrigger
+      // 直接返回 false ⇒ 常态下首轮之后即命中本短路，点击路径彻底不进入。
+      const existingEarly = document.getElementById(NAV_DOCK_ID);
+      const earlyCheapSig = navDockCheapSignature(navBars);
+      if (
+        existingEarly &&
+        session.byBar &&
+        !navDockHasPendingTrigger(navBars, session, zeroClick, barBuckets) &&
+        existingEarly.dataset.mggaNavDockVer === NAV_DOCK_STRUCT_VER &&
+        existingEarly.dataset.mggaNavDockCheapSig === earlyCheapSig
+      ) {
+        return;
+      }
 
       // 收割缓存：会话缓存命中即只读复用（含视口变化重建）；未命中则本轮
       // 直扫 + 对"从未点击过"的触发器逐栏收割（每元素至多一次）
@@ -5687,36 +6933,62 @@
         for (const bar of navBars) {
           const trigger = findMoreTrigger(bar);
           // 结构自诊断：真实登录态问题排查用（显示每栏名、外显锚点数、
-          // 触发器识别结果）。定位后可整体移除。
+          // 触发器识别结果）。用 console.debug —— Chrome/Edge 控制台默认
+          // 不显示 Verbose，避免刷屏遮住页面自身日志；排查时切 Verbose 即可。
           const visAnchors = Array.from(bar.querySelectorAll("a[href]")).filter(
             (a) => a.offsetParent !== null || a.getClientRects().length > 0
           ).length;
-          console.info(
-            `[MGGA] scan "${(bar.getAttribute("aria-label") || navBarKey(bar)).slice(0, 28)}" vis=${visAnchors} trig=${trigger ? (normalizedText(trigger) || trigger.getAttribute("aria-label") || "icon-btn").slice(0, 18) : "null"}`
+          console.debug(
+            `[MGGA] scan "${(bar.getAttribute("aria-label") || navBarKey(bar)).slice(0, 28)}" vis=${visAnchors} trig=${trigger ? (normalizedText(trigger) || trigger.getAttribute("aria-label") || "icon-btn").slice(0, 18) : "null"} zeroClick=${zeroClick.get(navBarKey(bar)) || 0}`
           );
-          if (!trigger) {
-            // 本轮扫不到触发器（注水未完成）：留给补收轮
+          // 闸门：非 dock 栏 / 本栏零点击已能取到条目 / 纯面包屑栏 / 无触发器
+          // ⇒ 一律不点击（免点击改造主路径，判定唯一入口 navDockBarClickAllowed）
+          if (!navDockBarClickAllowed(bar, trigger, zeroClick, barBuckets)) {
             continue;
           }
           if (!canClickTrigger(trigger)) continue;
           let menuItems = [];
+          const harvestDiag = {};
           try {
             menuItems = extractMenuItems(findMoreMenu(trigger, false));
             if (!menuItems.length) {
-              menuItems = await harvestMoreItems(trigger);
-              recordClick(trigger, menuItems.length > 0);
+              logNavDockClickDecision(bar, trigger, barBuckets.get(bar));
+              menuItems = await harvestMoreItems(trigger, harvestDiag);
+              recordClick(trigger, menuItems.length > 0, harvestDiag);
             }
           } catch (err) {
             console.warn("[MGGA] nav dock: harvest failed for one bar:", err);
-            recordClick(trigger, false);
+            recordClick(trigger, false, harvestDiag);
           }
           if (menuItems.length) {
             harvestedByBar.set(navBarKey(bar), menuItems);
           }
         }
-        // 有任一成功收割才会话结果定稿；空结果（注水未完成）不定稿，
-        // 留给后续轮次重扫，避免"空缓存锁死 → 悬浮球消失"。
-        if (harvestedByBar.size) session.byBar = harvestedByBar;
+        // 会话结果定稿。**关键修复**：旧逻辑只在"有任一成功收割"时定稿，
+        // 于是"桌面全宽、全部导航项外显、根本无需下拉"这一常态下缓存永远
+        // 写不上 → 每轮都走未命中分支重扫 + 打日志 → 配合 finally 的无条件
+        // 续排形成约 5Hz 的自激励死循环（2026-09-21 真机实证，改前/改后
+        // 逐位一致，与本次 9 项整改无关）。
+        // 空产物同样定稿是安全的：面板项由 collectRepoHomeNavItems 直接读
+        // 实时 DOM 得到，缓存只补充"被收进 More 里的隐藏项"；晚出现的触发器
+        // 仍由下方 missedBars 补收分支（每轮独立重算）获得点击机会，并在成功
+        // 时回写 session.byBar。
+        // 仍保留一条保护：只要还有"从未点击过"的触发器，就不定稿，留给补收轮。
+        // 免点击改造后必须叠加同一闸门 —— 否则零点击已覆盖的栏会永远被算作
+        // "未决"，session.byBar 定不了稿，每轮重扫+打日志，自激励循环复现。
+        const hasUndecided = navBars.some((bar) => {
+          const t = findMoreTrigger(bar);
+          if (!navDockBarClickAllowed(bar, t, zeroClick, barBuckets)) return false;
+          return !!t && !session.clickState.get(t);
+        });
+        if (
+          harvestedByBar.size ||
+          !hasUndecided ||
+          session.clickTotal >= NAV_DOCK_SESSION_MAX_CLICKS
+        ) {
+          session.byBar = harvestedByBar;
+          if (harvestedByBar.size) roundProgress = true;
+        }
       }
       // 待补触发器每轮重算（无论缓存是否命中）：晚出现的触发器
       // （如切 Responsive 后 react-partial 重渲染出的头部 More）即使
@@ -5724,24 +6996,28 @@
       // 不是"收割机会"。（曾因缓存命中分支不计算 missedBars 导致晚现
       // 触发器永不被点击，v2026.10.8 前实证。）
       const missedBars = navBars.filter((bar) => {
-        if (harvestedByBar.has(navBarKey(bar))) return false;
+        // 闸门：非 dock 栏、零点击已覆盖的栏、纯面包屑栏永不进入点击补收
         const t = findMoreTrigger(bar);
-        return t && canClickTrigger(t);
+        if (!navDockBarClickAllowed(bar, t, zeroClick, barBuckets)) return false;
+        if (harvestedByBar.has(navBarKey(bar))) return false;
+        return canClickTrigger(t);
       });
 
       // 签名短路（收割后、补收前）：本轮收割结果与现有面板一致、且没有
       // 待补收栏时直接返回，不再进入补收/增量补扫 —— 杜绝"任何 body 变更
       // 都重扫并重新点击 More"的无限重试循环（曾引发模拟移动端时页面在
       // 顶部与 README 区之间振荡）。有待补栏时不短路，让补收继续进行。
-      const existingEarly = document.getElementById(NAV_DOCK_ID);
-      const earlySignature = navDockSignature(
+      // 覆盖场景：触发器已点击过且处于 2.5s 空结果重试窗口内（missedBars
+      // 暂空、session.byBar 未定稿），此时无重排必要，等重试窗口开启。
+      const existingPreHarvest = document.getElementById(NAV_DOCK_ID);
+      const preHarvestSignature = navDockSignature(
         collectRepoHomeNavItems(navBars, harvestedByBar)
       );
       if (
-        existingEarly &&
+        existingPreHarvest &&
         !missedBars.length &&
-        existingEarly.dataset.mggaNavDockSig === earlySignature &&
-        existingEarly.dataset.mggaNavDockVer === NAV_DOCK_STRUCT_VER
+        existingPreHarvest.dataset.mggaNavDockSig === preHarvestSignature &&
+        existingPreHarvest.dataset.mggaNavDockVer === NAV_DOCK_STRUCT_VER
       ) {
         return;
       }
@@ -5753,17 +7029,23 @@
         for (const bar of retryBars) {
           const trigger = findMoreTrigger(bar);
           if (!trigger || !canClickTrigger(trigger)) continue;
+          const harvestDiag = {};
           try {
-            const menuItems = await harvestMoreItems(trigger);
-            recordClick(trigger, menuItems.length > 0);
+            logNavDockClickDecision(bar, trigger, barBuckets.get(bar));
+            const menuItems = await harvestMoreItems(trigger, harvestDiag);
+            recordClick(trigger, menuItems.length > 0, harvestDiag);
             if (menuItems.length) {
               harvestedByBar.set(navBarKey(bar), menuItems);
               session.byBar = harvestedByBar;
+              roundProgress = true;
             }
           } catch (_) {
-            recordClick(trigger, false);
+            recordClick(trigger, false, harvestDiag);
           }
         }
+        // 本轮只补收 2 栏：还有剩余就再排一轮把它们吃完（分批是有界的，
+        // 因为每个触发器最多点击 2 次、全局最多 12 次）
+        if (missedBars.length) roundPending = true;
       }
 
       const items = collectRepoHomeNavItems(navBars, harvestedByBar);
@@ -5794,6 +7076,8 @@
 
       const existing = document.getElementById(NAV_DOCK_ID);
       const signature = navDockSignature(items);
+      // 廉价结构签名：供下一轮早短路比对（面板 DOM 未变即无需重扫）
+      const cheapSig = navDockCheapSignature(navBars);
       // 旧版结构（无标题栏/过渡类）与新结构不兼容，通过结构版本号强制重建一次
       const STRUCT_VER = NAV_DOCK_STRUCT_VER;
       if (
@@ -5801,6 +7085,9 @@
         existing.dataset.mggaNavDockSig === signature &&
         existing.dataset.mggaNavDockVer === STRUCT_VER
       ) {
+        // 面板内容未变：不重建（不产生任何 DOM 变更），只补写廉价签名，
+        // 让下一轮走早短路；徽标同步刷新。
+        existing.dataset.mggaNavDockCheapSig = cheapSig;
         updateNavDockFabBadge(
           document.getElementById(NAV_DOCK_TOGGLE_ID),
           items.length
@@ -5812,6 +7099,7 @@
       const freshPanel = buildNavDockPanel(items);
       freshPanel.dataset.mggaNavDockSig = signature;
       freshPanel.dataset.mggaNavDockVer = STRUCT_VER;
+      freshPanel.dataset.mggaNavDockCheapSig = cheapSig;
       freshPanel.dataset.mggaNavDockCount = String(items.length);
       const freshFab = buildNavDockFab();
       bindNavDockFab(freshFab, freshPanel);
@@ -5821,18 +7109,58 @@
       if (existingFab) existingFab.remove();
       document.body.appendChild(freshPanel);
       document.body.appendChild(freshFab);
+      roundProgress = true;
     } finally {
       navDockBuilding = false;
-      // 构建期间新注入的触发器(如切 Responsive 后 react-partial 重渲染出的
-      // 头部 More)会被 navDockBuilding 守卫吞掉:构建结束后补一轮调度,
-      // 由状态机判定是否还需要收割(每元素至多 2 次)。
-      scheduleNavDockViewportCheck();
+      // === 自限续排（2026-09-21 无限重扫修复）===
+      // 旧实现无条件 `scheduleNavDockViewportCheck()`：配合"空收割不定稿"，
+      // 让"桌面全宽、所有导航项外显、无需下拉"这一常态陷入 200ms 自激励
+      // 重扫 —— 真机实测 [MGGA] scan 13.9 条/秒且永不停止，主线程被持续
+      // 唤醒、页面永不进入空闲态（用户观感即"无限加载"），DevTools 控制台
+      // 被刷屏看不到页面自身代码。
+      // 现在只在三种确有必要时续排，且连续"有进展"轮次也有上限：
+      //   1) navDockDirty  —— 构建期间到达的变更需要回看
+      //   2) roundPending   —— 还有分批/重试收割需求
+      //   3) roundProgress  —— 本轮真的重建了面板，需一轮确认晚现触发器
+      // 其余情况一律停表，交由 MutationObserver / resize 唤醒。
+      const needNext = navDockDirty || roundPending || roundProgress;
+      navDockDirty = false;
+      if (needNext) {
+        navDockRebuildStreak = roundProgress ? navDockRebuildStreak + 1 : 0;
+        if (navDockRebuildStreak <= NAV_DOCK_MAX_REBUILD_STREAK) {
+          scheduleNavDockViewportCheck();
+        } else if (navDockRebuildStreak === NAV_DOCK_MAX_REBUILD_STREAK + 1) {
+          console.debug(
+            "[MGGA] nav dock: 连续重建达上限，停表等待 DOM 变更唤醒"
+          );
+        }
+      } else {
+        // 本轮无事可做：停表。后续由 MutationObserver / resize / SPA 事件唤醒。
+        navDockRebuildStreak = 0;
+      }
+      // 独立的**一次性**延迟重试：把状态机里剩余的"空结果待重试"触发器
+      // 排到各自 2.5s 窗口开启时跑一轮，补回收窄 finally 后可能丢失的
+      // 收割机会。与上面的续排互不影响，且落地后即无待重试项。
+      if (navBars && session && zeroClick && barBuckets) {
+        const retryAt = navDockEarliestRetryAt(
+          navBars,
+          session,
+          zeroClick,
+          barBuckets
+        );
+        if (retryAt !== null) scheduleNavDockRetry(retryAt - Date.now());
+      }
     }
   }
 
-  async function applyMobileNavDock() {
+  async function applyNavDock() {
     // 激活条件：仓库主页；悬浮球常驻显示，所有设备（含桌面）可用
     if (!isRepoHomePath()) {
+      clearNavDockRetry();
+      if (navDockDebounce) {
+        clearTimeout(navDockDebounce);
+        navDockDebounce = null;
+      }
       removeNavDock();
       if (navDockObserver) {
         navDockObserver.disconnect();
@@ -5859,8 +7187,29 @@
     if (navDockDebounce) clearTimeout(navDockDebounce);
     navDockDebounce = setTimeout(() => {
       navDockDebounce = null;
-      applyMobileNavDock();
+      applyNavDock();
     }, 200);
+  }
+
+  /**
+   * 空结果后的延迟重试：一次性定时器（不参与自激励续排）。
+   * 已有排程时不重复排，避免同一窗口堆积多个定时器。
+   */
+  function scheduleNavDockRetry(delayMs) {
+    if (navDockRetryTimer) return;
+    const d = Math.min(Math.max(Number(delayMs) || 2500, 200), 5000);
+    navDockRetryTimer = setTimeout(() => {
+      navDockRetryTimer = null;
+      if (!isRepoHomePath()) return; // 已离开仓库页：不再唤醒
+      applyNavDock();
+    }, d);
+  }
+
+  function clearNavDockRetry() {
+    if (navDockRetryTimer) {
+      clearTimeout(navDockRetryTimer);
+      navDockRetryTimer = null;
+    }
   }
 
   function setupNavDockObserver() {
@@ -5891,7 +7240,7 @@
     spaNavTimer = setTimeout(() => {
       // 移动端布局修正：所有仓库页都重新应用（不限 Release）
       applyMobileLayoutFix();
-      applyMobileNavDock();
+      applyNavDock();
       if (isReleasesPage()) {
         applyColors();
         processAssets();
@@ -5917,9 +7266,9 @@
 
   // 初始执行
   if (document.body) {
-    applyMobileNavDock();
+    applyNavDock();
   } else {
-    document.addEventListener("DOMContentLoaded", () => applyMobileNavDock(), { once: true });
+    document.addEventListener("DOMContentLoaded", () => applyNavDock(), { once: true });
   }
   if (isReleasesPage()) {
     processAssets();

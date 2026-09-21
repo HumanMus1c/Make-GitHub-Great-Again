@@ -1,3 +1,411 @@
+v2026.10.23 [2026-09-21]
+nav dock 文件区 tab:切换后对新正文吸顶(Contributing/License 不再"下移一段距离") + 同页 tab 点击不再重载
+[
+1. 缘起:用户反馈"点击 README 导致不会下移,但是点击 Contributing 和 License 却会
+   下移一段距离,而不是和 README 一样吸顶"+"当页面已经处于 code 页面时,再点击 Code
+   就应该 Ajax 吸顶而不重载"。两个独立缺陷:文件区 tab 切换后的落点 + 同页 tab 的点击。
+2. 决定性取证:**`-ov-file` 从来不是元素 id**,而是 GitHub `OverviewRepoFiles` 组件的
+   **React 路由键**。证据取自 GitHub 自身的 bundle(本仓库留存副本
+   .workbuddy/probe/code-view.js),全库只出现在三处:
+   ① nav 项的选中态比较值 "aria-current": "readme-ov-file"===ep?"page":void 0;
+   ② 切 tab 的真实实现 N=(e,t)=>{e.preventDefault(); if(ep===t)return;
+      let n=new URLSearchParams(eu); n.set("tab",t);
+      eh(n,{replace:!0,preventScrollReset:!0})} —— 改 ?tab= 查询参数并**显式禁止
+      滚动重置**;点已选中的 tab 直接 return(什么都不做);
+   ③ 侧栏/移动菜单的 hash 路由键 href:"#contributing-ov-file"。
+   另有 tabNames 列表 f.push("contributing-ov-file") 等。**组件从未给任何元素挂
+   这个 id**。
+3. 真实页面复核(diag-locate.js 扩到"切 tab 后定位目标 + 同页条目"):iina
+   (#readme-ov-file / #License-1-ov-file / #contributing-ov-file)、vscode
+   (#readme-ov-file / #MIT-1-ov-file / #contributing-ov-file / #security-ov-file)、
+   kubernetes(#readme-ov-file / #Apache-2.0-1-ov-file / #contributing-ov-file /
+   #security-ov-file)—— **8 个路由键,目标元素存在全为 false**。
+4. 根因 A(为何只有 README 会吸顶):README 是默认选中 tab(aria-current),
+   navDockInPageTarget 走"已选中 → 认领文件区正文块"分支**拿到了元素** ⇒ 路径 2
+   立即定位。Contributing/License 未选中 ⇒ hit.el===null ⇒ 走路径 3,交还 React
+   原锚点把 tab 切成功(这部分一直是对的),然后等一个**永远不存在的元素** ⇒ 必然
+   1500ms 超时 ⇒ **从不定位**。表现为 tab 切了、页面没动,相对 README 就是"下移了
+   一段距离"。
+5. 修复 A:① 完成信号改为**选中态迁移**(navDockFileTabSwitched + navDockBarSelectedKey;
+   栏归属用 item.source.closest("nav"),回退按 aria-label="Repository files");
+   ② 定位目标改为**已渲染正文块**(navDockFileTabLocateTarget 三级兜底:真存在的
+   -ov-file 元素 → navDockOverviewArticleEl() → navDockContentRootEl(),三仓库实测
+   恒命中第二级 markdown-body entry-content container-lg);③ **先立即吸顶一次**
+   (慢网络下先有反馈),切换完成后再补一次对齐,残余漂移由既有的 1.2s 有界重定位
+   收尾;④ 未注水超时仍回放一次面板锚点自身,可达性不低于改动前。
+6. 根因 B(同页 tab 重载):Code tab 落地路径 dest===location.pathname,而旧版作用域
+   判定 `if(!isFileAreaTabLabel(item.label) && !(hit&&hit.id)) return false` ——
+   isFileAreaTabLabel("Code") 为 false、hit 为 null ⇒ **直接不接管** ⇒ 交给浏览器/
+   Turbo 做一次**同 URL 导航**:重取整块内容 + 滚动归零,用户感知即"重载"。
+7. 修复 B:新增路径 4 —— 落地路径就是当前页的条目**一次导航都不发**:
+   navDockIsSamePageHref 解析成 URL 后比 pathname(去尾斜杠,相对/绝对两种形态都吃,
+   跨源不接管),命中则 preventDefault + 定位 navDockContentRootEl()
+   (#repos-split-pane-content → #repo-content-pjax-container → main;三仓库均存在)。
+   该路径对所有同页 tab 通用(Issues 页点 Issues 同样受益),不只 Code。
+8. 滚动引擎增强:navDockScrollElementToTop 新增一层 —— 目标自身若就是滚动容器
+   (#repos-split-pane-content 带 tabindex="0",GitHub 的"键盘可滚区域"标记,它自己
+   就是滚动容器),只对齐外框不够,内部还停在半路;现在连它自己的 scrollTop 一起归零,
+   语义即"从该元素的开头显示"。实测值多返回一个 self 标记。
+9. 日志可判读:via 取值扩展到 in-page|file-tab|file-tab-await|same-page-top|
+   pass-through;有定位时另带 self=0 表示"目标自身内部被归零"。真机点一次
+   Contributing/License 看那行 via= 即可自证走的哪条路。
+10. 回归:tools/smoke-load.js **55/55 PASS**。新增场景 3g(文件 tab 吸顶,3 项断言:
+    夹具刻意**不含任何 -ov-file 元素**以对齐真实 SSR;切换回调把正文文档绝对坐标从
+    2000 改到 3200,断言最后一次 scrollTo=3200 且 elTop=0,从而证明"切换后确实重新
+    对齐过";License 用不同形状的路由键 id #License-1-ov-file 再验一次)、场景 3h
+    (同页 tab:预置窗口 __fakeY=900 / 内容区 scrollTop=700,点 Code 后断言 ——
+    已接管 defaultPrevented、URL 未变、内容区 scrollTop→0、窗口→236、
+    内容区 elTop=64;外加"跨页条目 Insights 仍不接管")。
+11. 红绿对照:同一套断言喂给修复前版本(.workbuddy/probe/prev-before-filetabs-fix.js,
+    取自快照 e4d243d)⇒ **3 项 FAIL**:① Contributing 切换后 scrollTo 调用序列为
+    **空**(旧版从没定位过,正是用户反馈的直接证据);② License 同上;③ 同页 Code
+    未被接管(会走同 URL 导航 = 重载)。tools/verify-harvest-sim.js 10/10 未回归。
+12. 未验证:真机(本机网络到 github.com 不通,curl SSL error 35 / node fetch failed),
+    只对已保存的真实 SSR 做端到端验证。真机判读:via=file-tab 为理想;若为
+    file-tab-await(1.8s 内没探到选中态迁移),页面**已按"立即吸顶"落在文件区顶部**,
+    不会退化回旧行为,把该行发我即可据此收紧判定。
+13. 已知取舍:同页条目不清理 URL 上的 ?tab= 参数 —— 清参数需要走 React Router 的
+    navigate,那正是本次要避免的重载。表现为"在 ?tab=license 下标点 Code 会回顶部但
+    内容仍停在 License"。这是显式取舍,不是遗漏。
+]
+
+v2026.10.22 [2026-09-21]
+nav dock 定位修正:三层滚动下精确置顶 + 禁止整页重载(点 LICENSE 跳走修复)
+[
+1. 缘起:用户反馈"点击导航的 LICENSE 会导致页面跳转至
+   https://github.com/iina/iina/blob/develop/LICENSE,并且 Repositories 的三个导航
+   每次定位都会发生下移而不是置顶"。两个独立缺陷:导航行为 + 滚动落点。
+2. 根因 A(整页重载):上一版在"页内目标未渲染"时一律 preventDefault + 等 1500ms,
+   等不到就 location.assign(item.href) —— 那是**文档级导航**,绕过 Turbo,等于把
+   SPA 上下文整个丢掉。而 item.href 对文件区主题 tab 由 resolveFileAreaTabHref
+   解析得到:iina 的 License tab 命中"证据 1(页面已有 /blob/.../{license,…} 锚点)",
+   即左侧文件区那条 /iina/iina/blob/develop/LICENSE —— 与用户报告的 URL 完全一致。
+3. 根因 B(定位不置顶):navDockScrollToTarget 用
+   el.scrollIntoView({block:"start"}) —— 它的语义是"逐级滚动每一层可滚动祖先",
+   而各层偏移量按**同一份初始几何**一次性算完。新版仓库页里内容区自己就是滚动容器
+   (#repos-split-pane-content 带 tabindex="0" + data-selector 同名,典型的"键盘可滚
+   区域"标记),于是存在"内层容器 + 窗口"两层:内层按初始 rect 滚 Δ1、窗口又按同一份
+   初始 rect 滚 Δ2,两层互相抵消 ⇒ 目标既不在容器顶也不在视口顶,停在中间偏下
+   ("下移")。behavior:"auto" 还会跟随站点 CSS 的 scroll-behavior:smooth,动画中途
+   被打断就停在半路;定位完成后也没有锚定,注水/焦点还原/粘性重排都能把滚动再挪走。
+4. 修复 A(禁止整页重载):删掉 location.assign 兜底,改为三级——
+   ① 页内目标已在 DOM → 接管 + 立即定位(不导航、不重载);
+   ② 源锚点是 href="#" 的占位 tab → 接管 + 交还 React 原锚点(原生客户端路由 =
+      AJAX);**仅当 React 未接管**(尚未注水,没人接得住这次点击)才回放一次面板
+      锚点自身(带真实 href,交给 Turbo 软导航);React 已接管却还在等路由数据时
+      不回放,避免与其撞车形成双重导航;
+   ③ 其余(真实 URL 的社区文件链接,如左侧文件区的 LICENSE)→ **不接管**,面板锚点
+      自身的 href 交给 Turbo 全局拦截器,比我们替换更保真。
+5. 修复 B(定位引擎重写):新增 navDockScrollableAncestors(找可滚动祖先)/
+   navDockStickyOffsetWithin(容器内让位)/ navDockStickyTopOffset(顶栏让位)/
+   navDockTargetScrollTop / navDockSetWindowScrollTop / navDockScrollElementToTop /
+   navDockStartLocateReassert,替换原 scrollIntoView:内层容器先各滚各的(扣掉
+   "已贴容器顶"的粘性子导航),窗口最后统一对齐(扣掉固定/粘性顶栏实测高度,与站点
+   自身 scroll-padding-top 取大者),显式 behavior:"instant" 绕开 CSS smooth,
+   并在 scrollTo 被覆写时用 scrollTop 兜底。
+6. 锚定与礼让:定位后 1.2s 内有界重定位(仅在"用户没自己滚 + 目标仍在文档里 + 确实
+   偏 >2px"时才动);装一次 wheel/touchstart/keydown 的 capture+passive 监听,探测到
+   用户自己在滚就立即收手,绝不抢滚动条。收割回弹抑制窗口 1200ms → 2000ms,覆盖
+   重定位窗口,避免 unlockPageScrollForHarvest 的回弹把定位拉回 snapY。
+7. 日志可判读:locate 行补上实测值 top=/y=/off=/elTop=/inner=(目标应有滚动位置/实际
+   位置/顶部让位/定位后目标视口坐标/参与滚动的内层容器数),via 取值
+   in-page|delegate-ajax|await-render|pass-through;若定位后被别的滚动挪走过,会另打
+   一行 "locate re-asserted Nx (...)";下次真机复现不必再猜。
+8. 回归:tools/smoke-load.js 新增场景 3e(三层滚动夹具:内容区自滚 + 粘性子导航 +
+   固定顶栏,断言容器 scrollTop=860 / 窗口=276 / 正文 elTop=64,并在 1.4s 后复查无
+   漂移)、场景 3f(真实 URL 的 LICENSE 条目不得被接管)、静态回归闸
+   (handleNavDockItemClick 函数体内不得出现 location.assign/replace)。测试基建新增
+   installFakeLayout / viewportTop / stubViewportRect / stubScrollable —— jsdom 没有
+   排版层(scrollY 恒 0、getBoundingClientRect 恒 0、scrollTop 写入被忽略),不打桩就
+   写不出"定位到哪个元素/有没有置顶"这类断言。50/50 PASS。
+9. 红绿对照:同一套断言喂给修复前版本(.workbuddy/probe/prev-before-locate-top-fix.js,
+   取自快照 b1b204a)⇒ 6 项 FAIL,逐条对应本版两类缺陷(4 项属定位/置顶,2 项属整页
+   重载)。tools/verify-harvest-sim.js 10/10,并补上仿真沙箱缺失的
+   navDockScrollRebounceSuppressUntil 声明(否则 50ms 后的回弹回调会 ReferenceError)。
+10. 真实页面验证(diag-locate.js 扩到"分诊路径 + 社区文件链接"):iina / vscode /
+    kubernetes 三仓库 —— README tab 分诊 in-page(命中正文块),其余 tab
+    delegate-ajax;左侧文件区的 LICENSE / README.md / CONTRIBUTING.md 一律
+    pass-through,且其 href 正是旧版 location.assign 会去重载的 URL。
+11. 未验证:真机(本机网络到 github.com 不通,curl SSL error 35 / node fetch failed)。
+    真机判读方法:点一次 License 看 locate 行的 via=;若仍不置顶,看有无
+    re-asserted 行(有则说明还有第三方滚动源在赛后抢滚动条)。
+]
+
+v2026.10.21 [2026-09-21]
+nav dock 概览文件条目点击:README 立即页内定位 + 未选中 tab 交还原锚点触发 AJAX
+[
+1. 缘起:用户反馈"点击了 README 项之后无法立即定位到 README?默认情况下 README
+   不是在页面默认展示的吗?"+"我要那些支持 AJAX 的项都支持立即定位到目标位置
+   并触发 AJAX"。
+2. 取证一(真实 SSR,.workbuddy/probe/iina.html 等三仓库):文件区
+   `nav[aria-label="Repository files"]` 的三个 tab 全是 React 客户端路由占位
+   —— `<a href="#" aria-current="page">README</a>`、`<a href="#">Contributing</a>`、
+   `<a href="#">License</a>`。真实路由由 React 拦截点击完成(= AJAX)。
+3. 取证二(根因,探针 .workbuddy/probe/diag-locate.js 跑真实页面,三仓库一致):
+   取数链 pushItem 对"已选中 + href=#"落成 `location.pathname` ⇒ README 面板
+   href = 当前页路径 ⇒ 点击 = 浏览器导航到当前 URL(无 fragment)= **整页重载**,
+   滚动位置清零回到页首。既非定位也非立即,而页面本来就展示着 README,重载纯浪费。
+4. 取证三(AJAX 为何丢失):collectNavDockOriginalAnchor 深克隆源锚点。React 把
+   `__reactProps$…`/`__reactFiber$…` 挂成 DOM 节点**自有属性**,而 cloneNode
+   **不复制自有属性** ⇒ 克隆对 React 不可见,点它只走原生 href ⇒ `href="#"` 的
+   概览 tab 在面板里彻底失去客户端路由能力。(对比:真实 URL 条目克隆的普通 href
+   仍被 GitHub 自己的 Turbo 全局拦截器接管 —— `data-turbo-frame=
+   "repo-content-turbo-frame"` 实证,故那类本来就已是 AJAX,本轮不动。)
+5. 取证四(可复用的官方锚点):右侧 About→Resources 区用页内锚点跳概览文件 ——
+   `#readme-ov-file` / `#License-1-ov-file`(iina) / `#MIT-1-ov-file`(vscode) /
+   `#Apache-2.0-1-ov-file`(kubernetes)。但 **SSR 只有 href、没有对应 id 元素**
+   (三仓库实测"目标元素存在=false",id 由客户端补) ⇒ 定位策略必须"优先认领
+   已存在的元素",只认 id 会把点击判成"等渲染"变成空操作。
+6. 文件区正文容器的稳定标识:`#repos-split-pane-content`(文件区内容,
+   `data-selector` 同名)+ `article.markdown-body.entry-content`(GitHub 渲染
+   markdown 的固定组合类)。hashed 模块类名(OverviewRepoFiles-module__Box_3__*)
+   不入选择器 —— 构建哈希一变即失效。
+7. 修复 1(分诊点击)新增 handleNavDockItemClick(event, anchor, item),挂在面板
+   每个条目上(克隆与手工回退节点共用 attachNavDockItemClick):
+   ① 修饰键/非主键/target=_blank → 交还浏览器原生(新标签页等);
+   ② 目标已在页面上 → preventDefault + 瞬时定位(behavior:"auto",对应"立即");
+   ③ 目标未渲染且原锚点**已被 React 接管** → preventDefault + 交还原锚点,由
+      React 客户端路由原地换出内容(AJAX),再等目标出现后定位;
+   ④ 未接管(注水前)或无可交还锚点 → 只等目标出现;始终没出现则退回条目 href,
+      保持与改前一致的可达性(href === location.pathname 时**不重载**)。
+8. React 接管探测 navDockAnchorIsReactManaged:检查 `Object.keys(el)` 里有无
+   `__react*`。这既是"克隆点不动 React 路由"的根因,也是唯一可靠的就绪探针 ——
+   未接管的 `href="#"` 锚点交还点击只会让浏览器跳到页首(空 fragment),必须先探测。
+9. 作用域刻意收窄:仅概览文件类条目(isFileAreaTabLabel 命中,或已确认存在
+   -ov-file 目标 id)。其余条目本来就是真实 URL、克隆 href 已被 Turbo 接管,
+   不碰以免无谓扩大改动面。
+10. 修复 2(页内目标求解)navDockInPageTarget(item),**优先取已存在的元素**:
+    A) navDockOvFileAnchorIdFor(key) 扫页面 `a[href="#xxx-ov-file"]`,文本归一
+       (navDockLabelKey 只留字母数字)后与面板标签同名即认领 —— 故 `Readme` ↔
+       `README`、`MIT license` ↔ `MIT license` 均命中;再 getElementById。
+    B) 该条目是文件区**当前选中**的概览 tab(aria-current/data-selected)时,认领
+       文件区已渲染的正文块 navDockOverviewArticleEl()。**这一条覆盖 README**:
+       正文就在页面上,无需渲染也无需导航。
+11. 真实页面实测(diag-locate.js):README → id=readme-ov-file + el=正文块 ✅;
+    Contributing/License/MIT license/Apache-2.0 license → id 分别为
+    contributing-ov-file / License-1-ov-file / MIT-1-ov-file / Apache-2.0-1-ov-file;
+    Code of conduct / Security → id=null(侧栏文本不匹配)→ 交还原锚点后按前缀等待
+    `#…-ov-file`,等不到则退回条目 href(无回归)。
+12. 修复 3(滚动回弹抑制):unlockPageScrollForHarvest 的 1.5s 宽限期回弹只认
+    snapY,会把用户刚触发的定位拉回原处(表现为"点了 README 刚滚过去就被拉回")。
+    新增 navDockScrollRebounceSuppressUntil,navDockScrollToTarget 置 now+1200ms,
+    回弹窗口内直接 return。
+13. 诊断日志:每次定位打一行
+    `[MGGA] nav dock: locate "<label>" via=<in-page|delegate-ajax|await-render>
+    id="…" href="…"` —— 真机点一下即可自证走了哪条路,无需再猜。
+14. 回归:tools/smoke-load.js 新增场景 3d(5 项断言:README 就地定位到正文且
+    URL 未变、目标 id 已渲染时认领官方锚点、未选中 tab 交还原锚点被点 1 次、
+    非概览项 Issues 不被接管、Ctrl+点击不被接管)+ 夹具 overviewFilesHTML()。
+    46/46 PASS。红绿对照:同一套断言喂给修复前版本
+    (.workbuddy/probe/prev-before-locate-fix.js,取自快照 f76cc9e)⇒ 3 项 FAIL,
+    修复后全 PASS。tools/verify-harvest-sim.js 10/10(未回归)。
+15. 测试基建:jsdom 不实现导航,点真实链接会往 stderr 打 "Not implemented:
+    navigation";smoke-load.js 新增 quietNavigation 选项(仅本场景用独立
+    VirtualConsole 屏蔽,不影响 window.onerror 收集)。
+16. 未验证:真机(登录态仓库页)。本机网络不通 github.com(curl SSL error 35、
+    node fetch failed),仅能对已保存的真实 SSR 做验证。待确认客户端渲染后
+    `#…-ov-file` 是否真的挂上 id。版本 2026.10.20 → 2026.10.21,面板结构版本
+    12 → 13。回滚点 f76cc9e。
+]
+
+v2026.10.20 [2026-09-21]
+nav dock 多余点击根因修复:面包屑栏(Breadcrumbs)被闸门永久放行 + 点击日志措辞纠正
+[
+1. 缘起:免点击版上线后用户复测登录态仓库页,控制台仍出现
+   `[MGGA] nav dock: harvest click #1 ok on "?"`,提问"哪里触发了兜底"。
+2. 取证一(版本锁定):该日志行号为 5967,与 v2026.10.19 工作副本逐字一致
+   (改前快照 8772c63 同行为 5837)⇒ 跑的确是免点击版,不是旧代码残留。
+3. 取证二("?"含义):recordClick 的标签回退链是
+   `normalizedText(trigger) || aria-label || "?"`,"?" 即触发器**无文本、
+   无 aria-label** —— 纯图标弹出按钮。全页扫描(真实 SSR + 注入)显示这类
+   按钮共 4 个,只有 1 个落在 nav 内(仓库标签栏 action-menu),而该栏
+   zeroClick=23 已被闸门拦住 ⇒ 被点的必然是匿名页面里不存在的那一栏。
+4. 取证三(铁证,仓库内历史日志):.opensquilla/attachments/ 下 2026-09-20 的
+   控制台存档第 87/91 行 ——
+     [MGGA] scan "Breadcrumbs" vis=2 trig=icon-btn
+     [MGGA] nav dock: harvest click #1 ok on "?"      ← 紧接着
+     [MGGA] scan "Repository" vis=9 trig=More items   ← 下一栏才轮到
+   ⇒ 被点的是 **nav[aria-label="Breadcrumbs"]**(登录态 AppHeader 的
+   面包屑/上下文档)。
+5. 根因:Breadcrumbs 栏的两个锚点是 `/owner` 与 `/owner/repo`,被
+   isBreadcrumbish 全部剔除 ⇒ 该栏"零点击可得项"**恒为 0** ⇒ 只认
+   zeroClick 的闸门对它**永久放行**:每会话必然点开它的无名图标按钮
+   (仓库选择器 picker),picker 里的链接经 pushItem 直接入面板(不经
+   面包屑过滤)。这正是 2026-09-20 起反复出现的重复/垃圾项来源 ——
+   docs/fix-2026-09-20-dock-duplicate-tabs.md 记的"Breadcrumbs 栏 kebab
+   收割成功入面板"当时只按去重压制,未堵点击入口，免点击改造让它复现。
+6. 附带发现:日志措辞不实 —— `harvest click #N` 是**收割结论**而非"确实
+   点过"。harvestMoreItemsLocked 在触发器自报 aria-expanded="true" 时跳过
+   click 直接等菜单,命中预检菜单/全局兜底同样不点击。首轮排查因此被误导。
+7. 修复 1(闸门补条件)新增 navDockBarClickAllowed(bar, trigger, zeroClick,
+   barBuckets)作为**点击路径唯一判定入口**,navDockHasPendingTrigger /
+   navDockEarliestRetryAt / 初次收割循环 / hasUndecided / missedBars 五处共用
+   (此前四处各写一遍同样条件,漏一处即失守)。新增条件:锚点全被剔除
+   (kept=0)且触发器**无可访问名**的栏一律不点 —— 点开只会拿到 picker 链接。
+8. 修复 2(isDockEligibleBar)按 aria-label 正则
+   /breadcrumb|面包屑|当前位置/i 排除面包屑/上下文档:既不索引也不点击。
+   与既有 Global/Footer 排除同源,同一函数被索引与五处闸门共用。
+9. 修复 3(isDockEligibleBar 之外的兜底活路保留):栏内**一个锚点都没有**
+   (结构未知、菜单全靠 JS 注入,如登录态头部 react-partial)或触发器
+   **有可访问名**(More / More items / Toggle navigation)时仍允许点击 ——
+   不因噎废食。verify-partial-header-flow.js 的假头部("More" 文本)仍走
+   该分支。
+10. 诊断增强 1:collectRepoHomeNavItems 的 statsOut 新增 barBuckets
+    (Map<Element, {total,kept,hidden,ariaHidden,outside,moreLabel,breadcrumb,
+    prerendered,sampleRejected}>),逐条记录锚点被哪条规则剔除;按**栏元素**
+    键而不用字符串键,免疫 React 对 className/aria-label 的改写(字符串键会
+    因此查不到而把该栏误判成 zeroClick=0,闸门随之误放)。
+11. 诊断增强 2:每次真正决定点击时打一行 console.info 决策日志(栏名、key、
+    分桶明细、触发器名),并在 recordClick 的日志追加 clicks=(本轮真实点击
+    次数)与 menu=(菜单容器),措辞改为 `harvest #N ...` —— 下次再出现多余
+    点击,一行日志即可自证栏名与原因,不必再逐字比对历史存档。
+12. 回归:tools/smoke-load.js 新增场景 3c(面包屑栏 + 无名图标按钮 +
+    picker 菜单),3 项断言;并给 3b 的 More 触发器补尺寸桩 —— jsdom 无布局,
+    harvestMoreItems 对零尺寸触发器会早退,不打桩则 "clicks=0" 是零尺寸
+    凑出来的、验不到闸门本身。
+13. 红绿对照:同一套断言喂给修复前版本(.workbuddy/probe/
+    prev-before-breadcrumb-fix.js,取自快照 a93d092)⇒ 3 项 FAIL(面包屑按钮
+    被点 1 次、Picker Repository/Branches 两个垃圾项入面板、条目数 9≠7);
+    修复后 41/41 PASS(clicks=0、7 项)。
+14. tools/verify-harvest-sim.js:补抓 navDockDescribeNode(诊断分支新增依赖,
+    按名抽取的沙箱缺它会 ReferenceError),并新增 2 项诊断出参断言,10/10 PASS。
+15. 未验证:登录态真机(本地无法登录 github.com,headless Chrome 直连超时)。
+    请重启扩展后在仓库页确认控制台不再出现 "Breadcrumbs" 相关的
+    click decision 行,且面板不含 Picker 类条目。
+]
+
+v2026.10.19 [2026-09-21]
+nav dock 取数改为免点击:More 折叠项从预渲染 DOM 直读,模拟点击退出主路径
+[
+1. 缘起:上一版为压制"点击 More 引发焦点还原滚动跳动 / 无限重扫"引入了一整套
+   复杂度(滚动锁定+回弹、每元素 2 次点击预算、全局 12 次上限、2.5s 重试窗口、
+   1/20s 视口分桶、连续重建上限)。用户提问:有没有办法不模拟点击就拿到 More
+   里的折叠项。
+2. 取证一(GitHub 自身前端源码):githubassets/assets/behaviors-*.js 模块 G7
+   (.js-responsive-underlinenav)逐字为 ——
+     e.style.visibility = overflow ? "hidden" : "";
+     document.querySelector(`[data-menu-item=${tab}]`).hidden = !overflow;
+   它只切换可见性与 hidden,**从不插入或生成菜单项节点**;行为在 load 与
+   resize 各跑一次。即点击 More 不产生任何新信息。
+3. 取证二(现网 SSR 实测 6 仓库:vscode/node/iina/react/linux/kubernetes):
+   对每栏分别算出"直扫所得集合 A"与"免点击预渲染读取所得集合 B",结果
+   A ⊇ B 且"B 独有项"恒为空集 —— 溢出项自服务端首帧起就在 nav 内
+   (li[data-menu-item][hidden],hidden 挂在 li 上、不在 a 上,故现有直扫
+   早已命中)。另:文件区栏现恒为 data-overflow-mode="wrap",7 项全部外显,
+   2026-09-19 那条 body portal 收割链路在现网已成死代码。
+4. 结论:点击收割零净收益,却要付全部副作用成本。主路径改为**零点击读取**。
+5. 修复 1 新增 readPrerenderedBarItems(bar):零点击读取本栏预渲染项,两类
+   来源 —— ① 本栏 [data-menu-item] 锚点(溢出副本);② 本栏触发器
+   aria-controls 指向的下拉容器(仅当其位于本栏之外时补取,覆盖"菜单被渲染
+   到 nav 之外"的登录态头部结构)。
+6. 修复 2 新增点击闸门:collectRepoHomeNavItems 增加 statsOut 出参,统计每栏
+   "零点击即可取到"的项数;某栏 >0 即视为已覆盖,永久退出点击流程。闸门接入
+   navDockHasPendingTrigger / navDockEarliestRetryAt / 初次收割循环 /
+   hasUndecided / missedBars 五处。
+7. 修复 3 新增 isDockEligibleBar(bar):页脚与全局 Marketing 头部栏既不索引
+   也不允许点击,被 collectRepoHomeNavItems 与四处闸门共用 —— 否则非 dock 栏
+   因"没有 zeroClick 计数"而被闸门漏放触发器。
+8. 修复 4 点击路径降级为兜底:harvestMoreItems 与滚动锁定、点击预算、重试
+   窗口全部保留但仅在"某栏零点击一项都取不到、且存在可见 More 触发器"时
+   启用,为未知结构(登录态头部若既非预渲染在 nav 内、也无 aria-controls)
+   留活路。现网 SSR 下该分支恒不触发。
+9. 面板结构版本 v11 → v12,升级后旧面板强制重建一次。
+10. 附带修复:tools/verify-harvest-sim.js 自 2026-09-19 起即崩(漏抓
+    navDockAnchorLabel / HTMLElement / lockPageScrollForHarvest /
+    harvestMoreItemsLocked),已补齐并打桩 jsdom 的 scrollTo,现 8/8 PASS。
+11. 回归:tools/smoke-load.js 34 → 38 项全 PASS,其中新增 4 项为免点击改造
+    的决定性回归 —— 用现网 SSR 响应式标签栏结构(js-responsive-underlinenav
+    + [data-menu-item] 溢出副本,且 Wiki/Security/Insights 三项只存在于溢出
+    副本里),断言 More 触发器 clicks=0、三个溢出独有项全部进入面板、去重后
+    恰好 7 项无重复。node --check 通过。
+]
+
+v2026.10.18 [2026-09-21]
+修复仓库页无限加载:nav dock 自激励重扫循环 + 选择器兜底越界(含上一版整改的真实回归)
+[
+1. 现象:打开 GitHub 仓库页后,DevTools 控制台被 [MGGA] scan 刷屏、看不到页面
+   自身代码,页面观感"无限加载"、永不进入空闲态。
+2. 根因 A(主因,非本次整改引入):buildNavDock 的 finally 无条件续排 200ms 后
+   的下一轮;而 session.byBar 只在"收割成功"时才定稿 → "桌面全宽、所有导航项
+   外显、根本无需下拉"这一常态下缓存永远写不上 → 每轮都走未命中分支重扫全部
+   栏并打印 → 定时器自我重排,不设停止条件。真机实测 13.8~14.7 条/秒、永不停止,
+   DOM 持续被创建,主线程被反复唤醒。
+   附:签名短路写在重扫之后,白干并打完日志才 return。
+3. 根因 B(本次整改的真实回归):queryAssetRows 兜底含裸
+   ul[data-view-component] li.Box-row / section[data-testid] li,主选择器失配时
+   把页面无关的 li.Box-row 也当资产行;queryAssetCell 末位兜底为 row 自身,使
+   link.innerHTML = "" 直接清空无关行内容 → 触发 React 重渲染 → 观察器再调
+   processAssets → 无限重试循环(本仓库第三次记录该形态)。
+4. 修复 A1 早短路前置:新增 navDockCheapSignature(只读栏内锚点 href,零副作用)
+   + navDockHasPendingTrigger,在**任何重扫/日志/DOM 写入之前**判定"本轮无事
+   可做"并直接返回。
+5. 修复 A2 空产物同样定稿:只要没有"从未点击过"的触发器就写 session.byBar
+   (哪怕为空)。面板项本就由 collectRepoHomeNavItems 直读实时 DOM,缓存只补充
+   被收进 More 的隐藏项,定稿空产物安全;晚现触发器仍由每轮独立重算的补收分支
+   获得点击机会。
+6. 修复 A3 续排收窄且自限:finally 只在 navDockDirty(构建期间到达的变更)/
+   roundPending(分批或重试需求)/ roundProgress(本轮真重建了面板)时续排;
+   连续"有进展"轮次也有上限(NAV_DOCK_MAX_REBUILD_STREAK=5),其余一律停表,
+   交由 MutationObserver / resize / SPA 事件唤醒。同时引入 navDockDirty 记账,
+   补回旧实现靠无条件续排遮盖的"构建期间注入被守卫吞掉"缺口。
+7. 修复 A4 重试窗口独立排程:收窄续排后,空结果后的 2.5s 唯一重试会等不到轮次。
+   新增 navDockEarliestRetryAt + scheduleNavDockRetry(一次性定时器,不参与自
+   激励续排;每元素至多 2 次、全局至多 12 次,落地后即无待重试项)。
+8. 修复 A5 日志降噪:每栏结构自诊断由 console.info 改为 console.debug
+   (Chrome/Edge 默认不显示 Verbose),排查时切 Verbose 即可,不再遮住页面日志。
+9. 修复 B:兜底严格收窄为"[data-testid=release-assets] 容器内"→"行内确有
+   下载/归档链接特征";queryAssetLink 在主单元格类名失配时额外要求链接具备下载
+   特征或位于可信容器内,宁可跳过也不误改;queryAssetCell 保留 row 兜底(安全性
+   改由行选择收窄 + 链接可信度判定承担,兼顾 GitHub 改版时单元格类名整体更换)。
+10. 验证(真机 Chrome,10s 稳态窗口,1280px 桌面全宽):
+    scan 日志 141/147 条 → **0 条**;Script 时间 129~201ms → **3~5ms**;
+    DOM 创建节点 +2110/+2248 → **+0**;dock 面板与导航项完好(9/11 项)。
+    同日 400px 窄视口对照一致无回归,Script 59ms → 19ms。
+    tools/smoke-load.js 34 项全 PASS;新增 3 版本对照与定点核查探针。
+11. 回滚点:[snapshot] 116088274b815ba7563df977031dcbe1c7dafebe。
+]
+
+v2026.10.17 [2026-09-21]
+代码质量整改:9 项静态审查问题(隐式全局/巨型函数/重复实现/元信息/命名漂移/选择器耦合)
+[
+1. 起因:对主脚本做了一次通读审查,列出 9 项问题。本次逐项修复,并新增本地
+   jsdom 冒烟回归测试(tools/smoke-load.js)作为可重复验证手段。
+2. 问题 1 隐式全局:L1355 `dialog = document.createElement("div")` 无声明,
+   IIFE 非严格模式下泄漏为 window.dialog → 补 `const dialog`。
+3. 问题 2 巨型函数:createColorPickerDialog 原 1458 行。抽出
+   buildSettingsDialogHTML(模板)、bindFeatureToggleButtons(三个近乎逐字
+   重复的开关绑定合并为一次实现)、createKeywordRulesController(关键词
+   规则渲染/增删/持久化)、createColorPickerPanel + toggleColorPickerPanel
+   (内置取色器子面板)。1458 → 303 行,落入 docs/SOP.md 的 350 行硬上限内。
+   搬迁用脚本完成,对 9 个模板字面量做逐字比对 + 自由变量扫描,确认只依赖
+   refreshRealtimeStyles 一个闭包变量并显式参数化。
+4. 问题 3 重复实现:rgbToHex/hexToRgb/hslToHex/hexToHSL/rgbToHSL/hslToRGB
+   原本各写了 2-4 份(其中面板内 hexToRgb/rgbToHex 为死代码),收敛为
+   模块级颜色工具区,新增 cssColorToHex 统一三处"rgb() 字符串转 HEX"。
+5. 问题 4 元信息:@name:en 与 @name 同值(英文本地化未生效)→ 改为
+   "Make GitHub Great Again"。
+6. 问题 5 版本号:L409 兜底硬编码 "4.1",与 @version 严重脱节 → 新增
+   getScriptVersion() 单一来源,面板与 nav dock 共用。
+7. 问题 6 命名漂移:nav dock 实现早已改为"所有设备可用"(L5834 注释自陈),
+   但函数仍叫 applyMobileNavDock、ID 仍叫 mgga-mobile-nav-dock、i18n 键仍叫
+   mobileNavDock → 统一为 applyNavDock / mgga-nav-dock / navDock,修正
+   策略注释,NAV_DOCK_STRUCT_VER 10 → 11 强制重建一次。
+8. 问题 7 冗余授权:删掉全脚本零引用的 @grant unsafeWindow。
+9. 问题 8 选择器耦合:processAssets/regenerateHighlight/观察器根节点硬编码
+   GitHub 内部类名(.Box.Box--condensed li.Box-row 等)→ 集中为
+   ASSET_SELECTORS + queryAssetRows/queryAssetCell/queryAssetLink,主选择器
+   失配时按 data-testid="release-assets" 与语义结构兜底;applyColors 的
+   !important 规则同步并列兜底选择器。
+10. 问题 9 无谓暴露:window.initializeArchStyles 无任何外部消费者 →
+    收回 IIFE 内部成为普通函数声明。
+11. 验证:node --check 通过;tools/smoke-load.js 34 项断言全 PASS(含
+    改版形态兜底场景、开关持久化、颜色变更实时链路、window.dialog 无泄漏);
+    新增测试文件本身即为本次交付的一部分。
+12. 遗留(未在本次 9 项内):createColorPickerPanel 仍有 504 行 —— 它是一体
+    的内置取色器控件,canvas 绘制/输入解析/预设色/事件绑定共享 5 个可变
+    状态,继续拆分需改造成状态对象,属重写范畴,单独评估。
+]
+
 v2026.10.16 [2026-09-20]
 目的地归一升级:绝对 URL 合并 + 当前页豁免白名单化
 [
