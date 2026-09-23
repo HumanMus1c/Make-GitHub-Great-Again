@@ -5,4 +5,5 @@ package.json
 package-lock.json
 tools/diag.json
 tools/probe.json
+.opensquilla/
 .workbuddy/

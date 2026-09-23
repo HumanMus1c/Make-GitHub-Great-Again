@@ -1,4 +1,25 @@
 v2026.9.23 [2026-09-23]
+本批次汇总（2026-09-18 ~ 2026-09-23）：悬浮导航落地 + 两套面板标准统一 + 死代码清理（中英双语总览）
+[
+0. 本条目是「汇总索引」：把 2026-09-18 ~ 2026-09-23 的 15 个本地未推送提交重排为「7 个主题提交 + 1 个汇总提交」，并给出中英双语总览。每条改动的根因 / 取证 / 未验证项 / 回滚 SHA 仍以下面各条目与 docs/fixes/ 为准，本条目只做总览、不重复细节。
+1. 闸门说明：本项目没有构建系统（交付物是单个油猴脚本，无 release/debug 分支），等价闸门 = node --check + 离线回归 ⇒ 本次 node --check 通过、tools/smoke-load.js 92/92 PASS。
+2. 【EN】Code quality — the v2 architecture detector is wired into the icon fallback path, injected colours and HTML are sanitized, the missing i18n strings are completed, and the MutationObserver overhead is cut.
+3. 【EN】Floating nav dock — the old "nav More" flattening became a repo-home left dock that indexes the header nav, the repo tab bar, the file area, the file-tree nav and the sidebar; the FAB is always visible and toggles only the panel.
+4. 【EN】Harvest — per-bar grouping with dividers and per-bar retry, More read through the body portal, clickless harvest, ghost-menu and phantom-scrollbar filtering, page scroll locked during harvest with a retry budget, one harvest per page entry, and dedupe settled on normalized label plus destination.
+5. 【EN】Navigation — in-page locate instead of a reload, no hard navigation, unselected tabs handed back to React so their AJAX still fires, and the file-area content pinned to the top after a tab switch.
+6. 【EN】One panel standard — both title bars share padding / border / typography, the "visible title band" (panel top edge to divider) is 37.8px on both, every size is em-driven off a single clamp(vmin) font size, the scrollbar is immersive and shared through one generator, and the status glyphs are SVG from a single octicons-derived source.
+7. 【EN】Dead weight removed — the "fix repo header button overflow" feature (proved inert by a live A/B run) and the three never-executing third-party colour-picker adapters are gone; the picker's doubled width on RGB/HSL is fixed with one definite-width declaration.
+8. 【中文】代码质量：v2 架构检测器接进图标兜底路径；对注入的颜色与 HTML 做净化；补全缺失的 i18n 字符串；削减 MutationObserver 开销。
+9. 【中文】悬浮导航：旧的「导航栏 More 多行开关」重做成仓库主页左侧悬浮导航，索引全局头部、仓库标签条、文件区、文件树与侧栏；悬浮球常驻，只负责切换面板。
+10. 【中文】收割机制：按栏分组 + 分割线且漏栏可重试；More 改从 body 门户直读（免点击）；过滤幽灵菜单与假滚动条；收割期锁住页面滚动并给每栏重试预算；每进入一次页面只收割一次；去重收敛为「归一名 + 目的地」。
+11. 【中文】导航行为：页内定位取代重载；不做整页硬导航；未选中的 tab 交还原锚点以触发 AJAX；切 tab 后对新正文吸顶、同页 tab 不再重载。
+12. 【中文】面板标准统一：两处标题栏共用 padding / 边框 / 字重字号，「可视标题带」（面板顶边 → 分割线）两侧同为 37.8px，尺寸全 em 且只由一个 clamp(vmin) 字号驱动，滚动条沉浸式且抽成单一生成器，状态字形统一到 SVG 单一来源。
+13. 【中文】清死重：真机 A/B 证明恒不生效的「修正仓库头按钮溢出」、以及三个从未执行的第三方取色器适配器一并删除（面板开关行 6 → 4、油猴菜单项 7 → 6）；取色器 RGB/HSL 宽度翻倍用一行定值宽度修掉。
+14. 提交形态与回滚：15 个本地未推送提交 → 7 个主题提交（70344cc 代码质量 / 7b5f2c8 悬浮导航诞生与成型 / 999400c 收割机制重构 / 6c23ce1 导航行为去根因 / df50d19 来源扩展与面板重构 / 4cc7362 面板标准统一 / 7d548ac 清死重与收尾）+ 1 个汇总提交。动刀前打 tag snapshot-before-final-consolidation-20260923 保活旧 SHA；新链末端 tree 与旧 HEAD tree 逐字节一致（零内容差异）。整批回滚 git reset --hard df3f838（已发布 2026.9.17 基线）；只回滚本次重排 git reset --hard 56920cd。
+15. 文档收尾：update_log_en.md 补本批次双语总览，并修正其中一条自相矛盾的 NOTE（原 NOTE 称「9.x 起只维护中文」，却在同一文件里镜像了 10.20–10.30）；README 中英补「悬浮球入口」与面板自适应 / 字号缩放 / 沉浸式外观条目；.opensquilla/attachments/ 的 3 个工具附件移出仓库（本地保留，已加入 .gitignore）。
+]
+
+v2026.9.23 [2026-09-23]
 面板内 unicode 状态字形统一到 SVG（审计 §2.3 全量落地）
 [
 1. 需求（用户原话）：「§2.3（面板内 unicode 字形改 SVG）与 §2.4（抽面板外壳原语）按照当前项目整体完成度，是否可用开始实现了？」助手先取数判可行性再请用户拍板 —— 结论是 §2.3 可做（SVG 基建已成熟、悬浮球已有先例）、§2.4 不建议做；用户选「§2.3 全做（关闭/清除逐字同高）」+「§2.4 不做，只更正清单」。

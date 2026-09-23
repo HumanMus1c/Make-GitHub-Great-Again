@@ -1,4 +1,25 @@
 v2026.9.23 [2026-09-23]
+Batch consolidation (2026-09-18 - 2026-09-23): floating nav dock, one panel standard, dead-code removal (bilingual overview)
+[
+0. This entry is an index: it regroups the 15 local unpushed commits of 2026-09-18 - 2026-09-23 into 7 thematic commits plus 1 consolidation commit, and gives a bilingual overview. Per-change root cause / evidence / unverified items / rollback SHAs stay in the individual entries below and in docs/fixes/, which this entry does not duplicate.
+1. Gate: this project has no build system (the deliverable is a single Tampermonkey userscript, and there are no release/debug branches), so the equivalent gate is node --check plus the offline regression: both passed this round, node --check OK and tools/smoke-load.js 92/92 PASS.
+2. [EN] Code quality: the v2 architecture detector is wired into the icon fallback path, injected colours and HTML are sanitized, the missing i18n strings are completed, and the MutationObserver overhead is cut.
+3. [EN] Floating nav dock: the old "nav More" flattening became a repo-home left dock that indexes the header nav, the repo tab bar, the file area, the file-tree nav and the sidebar; the FAB is always visible and toggles only the panel.
+4. [EN] Harvest: per-bar grouping with dividers and per-bar retry, More read through the body portal, clickless harvest, ghost-menu and phantom-scrollbar filtering, page scroll locked during harvest with a retry budget, one harvest per page entry, and dedupe settled on normalized label plus destination.
+5. [EN] Navigation: in-page locate instead of a reload, no hard navigation, unselected tabs handed back to React so their AJAX still fires, and the file-area content pinned to the top after a tab switch.
+6. [EN] One panel standard: both title bars share padding / border / typography, the "visible title band" (panel top edge to divider) is 37.8px on both, every size is em-driven off a single clamp(vmin) font size, the scrollbar is immersive and shared through one generator, and the status glyphs are SVG from a single octicons-derived source.
+7. [EN] Dead weight removed: the "fix repo header button overflow" feature (proved inert by a live A/B run) and the three never-executing third-party colour-picker adapters are gone (panel toggle rows 6 -> 4, menu items 7 -> 6); the picker's doubled width on RGB/HSL is fixed with one definite-width declaration.
+8. [中文] 代码质量：v2 架构检测器接进图标兜底路径；注入的颜色与 HTML 做净化；补全缺失的 i18n 字符串；削减 MutationObserver 开销。
+9. [中文] 悬浮导航：旧的「导航栏 More 多行开关」重做成仓库主页左侧悬浮导航，索引全局头部、仓库标签条、文件区、文件树与侧栏；悬浮球常驻，只负责切换面板。
+10. [中文] 收割机制：按栏分组 + 分割线且漏栏可重试；More 改从 body 门户直读（免点击）；过滤幽灵菜单与假滚动条；收割期锁住页面滚动并给每栏重试预算；每进入一次页面只收割一次；去重收敛为「归一名 + 目的地」。
+11. [中文] 导航行为：页内定位取代重载；不做整页硬导航；未选中的 tab 交还原锚点以触发 AJAX；切 tab 后对新正文吸顶、同页 tab 不再重载。
+12. [中文] 面板标准统一：两处标题栏共用 padding / 边框 / 字重字号，「可视标题带」两侧同为 37.8px，尺寸全 em 且只由一个 clamp(vmin) 字号驱动，滚动条沉浸式且抽成单一生成器，状态字形统一到 SVG 单一来源。
+13. [中文] 清死重：恒不生效的「修正仓库头按钮溢出」与三个从未执行的第三方取色器适配器一并删除；取色器 RGB/HSL 宽度翻倍用一行定值宽度修掉。
+14. Commit shape and rollback: 15 local unpushed commits -> 7 thematic commits (70344cc code quality / 7b5f2c8 nav dock born and shaped / 999400c harvest rework / 6c23ce1 navigation root causes / df50d19 sources and panel rework / 4cc7362 one panel standard / 7d548ac dead-code removal) plus 1 consolidation commit. Tag snapshot-before-final-consolidation-20260923 was created first to keep the old SHAs alive; the new chain's tip tree is byte-identical to the old HEAD tree. Whole batch rollback: git reset --hard df3f838 (the published 2026.9.17 baseline). This consolidation only: git reset --hard 56920cd.
+15. Docs: this file gains the batch overview above and its stale NOTE is corrected; the READMEs gain the floating-ball entry point and the adaptive/immersive panel bullets; the 3 tool attachments under .opensquilla/attachments/ are removed from the repo (kept locally, now git-ignored).
+]
+
+v2026.9.23 [2026-09-23]
 Panel unicode status glyphs unified into SVG (audit item 2.3, done in full)
 [
 1. Request (user's words): "Are 2.3 (replace the panel's unicode glyphs with SVG) and 2.4 (extract a panel-shell primitive) ready to implement, given the project's overall state?" The assistant measured first and then asked the user to decide. Verdict: 2.3 is ready (the SVG infrastructure is mature and the floating ball already set the precedent), 2.4 is not advisable. The user chose "2.3 in full, with the close control and clear button kept byte-identical in height" and "2.4 not now, just correct the list".
@@ -1079,7 +1100,7 @@ Nav-dock overview-file items: README now locates in-page instead of reloading, a
 v2026.10.20 [2026-09-21]
 Root-cause fix for a spurious nav-dock click: the Breadcrumbs bar was permanently admitted by the gate + misleading click-log wording
 [
-NOTE: entries from v2026.9.x onward are maintained in update_log.md (Chinese); this file resumes mirroring at the newest entry.
+NOTE: this file mirrors only the newest batches. The 30 entries for v2026.9.18 - v2026.10.19 were maintained in Chinese only, in update_log.md; see the bilingual batch overview at the top of this file for a summary of the whole 2026-09-18 - 2026-09-23 batch.
 1. Trigger: after the clickless release, the user re-tested a logged-in repo page and the console still showed
    `[MGGA] nav dock: harvest click #1 ok on "?"`, asking "what triggered the fallback?".
 2. Evidence 1 (version lock): that log line was line 5967, byte-identical to the v2026.10.19 working copy

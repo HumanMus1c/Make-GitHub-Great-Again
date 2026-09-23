@@ -18,7 +18,8 @@ This is a simple and practical browser script that adds custom background colors
 - \[⬤] **Independent Theme Adaptation**: Perfectly adapts to GitHub's dark/light themes. Supports separate color settings for dark and light modes, which are independent of each other.
 - \[⬤] **Powerful Control Panel**: Provides an intuitive settings panel (with auto-adjusting window size). You can customize odd/even row colors and hover colors, and instantly toggle any feature on/off with real-time updates!
 - \[⬤] **Built-in Professional Color Picker**: A custom-developed color picker supporting HEX, RGB, and HSL modes, along with preset colors and real-time page effect previews while dragging.
-- \[⬤] **Floating Nav Dock**: On repository home pages, the script indexes every nav bar containing a `More` toggle (global header, repo tab bar, etc.), merges `More` dropdown entries with existing nav links in order, and lists them in a left-side floating dock. The floating button stays visible; click it or use the "Expand/Collapse nav dock" menu command to toggle the panel.
+- \[⬤] **Floating Nav Dock**: On repository home pages, the script indexes every nav source in the page (global header, repo tab bar, file area tabs, repo file tree, sidebar, etc.), merges the entries folded into `More` with the existing nav links in order, and lists them in a left-side floating dock. Clicking an entry navigates in page without a full reload. The floating button stays visible; click it or use the "Expand/Collapse nav dock" menu command to toggle the panel.
+- \[⬤] **One immersive panel look**: the nav dock and the settings panel share one title-bar and control standard, every icon inside them is SVG, the scrollbar is immersive (no step arrows, transparent track, revealed on hover), and the panel font size scales adaptively between 14px and 18px with the viewport.
 - \[◯] **~~Event Interception Optimization~~**~~: Deeply optimized event bubbling mechanism to perfectly resolve conflicts with GitHub's native scripts, ensuring lag-free operation and no console errors.~~
 
 ## 🚀 Installation
@@ -32,12 +33,11 @@ This is a simple and practical browser script that adds custom background colors
 
 ## 💡 Usage
 
-After installation, the script will automatically take effect on GitHub Release pages:
+After installation, the script takes effect on GitHub Release pages and repository home pages:
 
-1. Visit any GitHub repository's Release page.
-2. On the left side of any project's Release page, click the ⚙️ icon to open the settings panel.
-3. You can freely adjust various functions within the settings panel.
-4. All features take effect in real-time without needing to refresh the page.
+1. Visit any GitHub repository's **Release page** and click the ⚙️ icon in the lower-left corner to open the settings panel, where every feature can be adjusted.
+2. Visit any GitHub repository's **home page**: a floating ball is always present on the left. Click it (or use the "Expand/Collapse nav dock" menu command) to expand or collapse the left floating nav dock, which lists the page's header nav, repo tab bar, file area, file tree and sidebar entries. Clicking an entry navigates in page instead of reloading.
+3. The settings panel's size and font size adapt to the window; all features take effect in real-time without needing to refresh the page.
 
 ## 🎯 Use Cases
 
@@ -55,4 +55,4 @@ Feel free to submit Issues and Pull Requests to help improve this project!
 
 ***
 
-**Note:** This script only optimizes the style and visual clarity of the Assets list on the GitHub Release page and does not modify any functional content.
+**Note:** This script only optimizes the style and icon set of the Assets list on GitHub Release pages and offers a local floating nav dock on repository home pages; it does not modify any functional content.
