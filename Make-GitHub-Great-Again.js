@@ -2,7 +2,7 @@
 // @name                    Make-GitHub-Great-Again
 // @name:en                 Make GitHub Great Again
 // @namespace               https://github.com
-// @version                 2026.10.30
+// @version                 2026.9.23
 // @description             为 Release 的项目添加背景色，识别文件系统平台类型，以及高亮自定义关键词；修正移动端仓库页右侧空白列，新增移动端左侧悬浮导航
 // @description:en          Add background colors to each Release Asset, identify the file system platform type and custom keywords highlighter. Fix empty right column on mobile.
 // @author                  https://github.com/HumanMus1c
@@ -118,6 +118,71 @@
       /* GM_info 不可用时走兜底 */
     }
     return FALLBACK_VERSION;
+  }
+
+  // === GitHub 印记（octicon mark，16px）单一来源 ===
+  // 这枚图标原先在设置面板里写了两份（buildSettingsDialogHTML 初始模板 +
+  // updateDialogColors 重绘），本次导航面板标题栏又要接同一枚 ⇒ 三处各存一份
+  // 路径必然改漏。收敛成一处：路径只此一份，两处面板都调 githubMarkSvg()。
+  const GITHUB_MARK_PATH =
+    "M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z";
+
+  /**
+   * GitHub 印记 SVG 字符串。尺寸走 em ⇒ 标题字号自适应缩小时图标一起缩，
+   * 不会出现"字变小了、图标还杵着原来的大小"。
+   * decoration-only：aria-hidden + focusable=false，不进无障碍树。
+   */
+  function githubMarkSvg(em) {
+    const size = em || "1.1em";
+    return (
+      '<svg viewBox="0 0 16 16" width="' +
+      size +
+      '" height="' +
+      size +
+      '" fill="currentColor" aria-hidden="true" focusable="false" style="vertical-align:-0.15em;flex:none"><path d="' +
+      GITHUB_MARK_PATH +
+      '"/></svg>'
+    );
+  }
+
+  // === 设置面板悬浮球的齿轮图标（octicon gear-16）单一来源 ===
+  // 悬浮球原先用 unicode 字符 ⚙️（emoji 在 Windows 上由系统字体渲染，字号/基线/
+  // 颜色都不受控，且与导航球那枚 SVG 的粗细不一致）。改成 SVG 后，路径仍然只存一份：
+  // 导航兜底图标表 ICON_PATHS.gear 引用同一常量，不再各存一份。
+  const FAB_GEAR_PATH =
+    "M8 0a8.2 8.2 0 0 1 .701.031C9.444.095 9.99.645 10.16 1.29l.288 1.107c.018.066.079.158.212.224.231.114.454.243.668.386.123.082.233.09.299.071l1.103-.303c.644-.176 1.392.021 1.82.63.27.385.506.792.704 1.218.315.675.111 1.422-.364 1.891l-.814.806c-.049.048-.098.147-.088.294.016.257.016.515 0 .772-.01.147.039.246.088.294l.814.806c.475.469.679 1.216.364 1.891a7.977 7.977 0 0 1-.704 1.217c-.428.61-1.176.807-1.82.63l-1.102-.302c-.067-.019-.177-.011-.3.071a5.909 5.909 0 0 1-.668.386c-.133.066-.194.158-.211.224l-.29 1.106c-.168.646-.715 1.196-1.458 1.26a8.006 8.006 0 0 1-1.402 0c-.743-.064-1.289-.614-1.458-1.26l-.289-1.106c-.018-.066-.079-.158-.212-.224a5.738 5.738 0 0 1-.668-.386c-.123-.082-.233-.09-.299-.071l-1.103.303c-.644.176-1.392-.021-1.82-.63a8.12 8.12 0 0 1-.704-1.218c-.315-.675-.111-1.422.363-1.891l.815-.806c.05-.048.098-.147.088-.294a6.214 6.214 0 0 1 0-.772c.01-.147-.038-.246-.088-.294l-.815-.806C.635 6.045.431 5.298.746 4.623a7.92 7.92 0 0 1 .704-1.217c.428-.61 1.176-.807 1.82-.63l1.102.302c.067.019.177.011.3-.071.214-.143.437-.272.668-.386.133-.066.194-.158.211-.224l.29-1.106C6.009.645 6.556.095 7.299.03 7.53.01 7.764 0 8 0Zm-.571 1.525c-.036.003-.108.036-.137.146l-.289 1.105c-.147.561-.549.967-.998 1.189-.173.086-.34.183-.5.29-.417.278-.97.423-1.529.27l-1.103-.303c-.109-.03-.175.016-.195.045-.22.312-.412.644-.573.99-.014.031-.021.11.059.19l.815.806c.411.406.562.957.53 1.456a4.709 4.709 0 0 0 0 .582c.032.499-.119 1.05-.53 1.456l-.815.806c-.081.08-.073.159-.059.19.162.346.353.677.573.989.02.03.085.076.195.046l1.102-.303c.56-.153 1.113-.008 1.53.27.161.107.328.204.501.29.447.222.85.629.997 1.189l.289 1.105c.029.109.101.143.137.146a6.6 6.6 0 0 0 1.142 0c.036-.003.108-.036.137-.146l.289-1.105c.147-.561.549-.967.998-1.189.173-.086.34-.183.5-.29.417-.278.97-.423 1.529-.27l1.103.303c.109.029.175-.016.195-.045.22-.313.411-.644.573-.99.014-.031.021-.11-.059-.19l-.815-.806c-.411-.406-.562-.957-.53-1.456a4.709 4.709 0 0 0 0-.582c-.032-.499.119-1.05.53-1.456l.815-.806c.081-.08.073-.159.059-.19a6.464 6.464 0 0 0-.573-.989c-.02-.03-.085-.076-.195-.046l-1.102.303c-.56.153-1.113.008-1.53-.27a4.44 4.44 0 0 0-.501-.29c-.447-.222-.85-.629-.997-1.189l-.289-1.105c-.029-.11-.101-.143-.137-.146a6.6 6.6 0 0 0-1.142 0ZM11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM9.5 8a1.5 1.5 0 1 0-3.001.001A1.5 1.5 0 0 0 9.5 8Z";
+
+  /**
+   * 悬浮球图标 SVG 字符串。**不写 width/height 属性**：尺寸由 CSS 的
+   * --mgga-fab-icon 给（与球体尺寸同源缩放），属性会被任何 CSS 规则压掉，
+   * 写死了反而多一处要同步的地方。
+   */
+  function gearIconSvg() {
+    return (
+      '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="' +
+      FAB_GEAR_PATH +
+      '"/></svg>'
+    );
+  }
+
+  /**
+   * 两台悬浮球共用的入场动画（页面刷新时各触发一次）。
+   * 用 JS 显式挂/摘 class，而不是把 animation 写进基座规则：
+   *  · 只有「确实新建了一枚球」时才播 —— 重建、resize、面板开合都不会重播；
+   *  · 面板已展开时新建的球带着 opacity:0 的隐藏类，这里跳过播放入场动画，
+   *    免得它先在屏上闪一下再淡出。
+   */
+  function triggerFabPop(el) {
+    if (!el || el.classList.contains("mgga-fab-pop")) return;
+    if (el.classList.contains("hidden-to-right") || el.classList.contains("mgga-dock-fab-hidden")) {
+      return;
+    }
+    el.classList.add("mgga-fab-pop");
+    el.addEventListener(
+      "animationend",
+      () => el.classList.remove("mgga-fab-pop"),
+      { once: true },
+    );
   }
 
   // === 颜色工具区（模块级单一实现）===
@@ -642,7 +707,7 @@
     const versionStr = getScriptVersion();
     if (title) {
       const themeLabel = currentTheme === "dark" ? i18n.t("darkTheme") : i18n.t("lightTheme");
-      title.innerHTML = `<svg viewBox="0 0 16 16" width="1.1em" height="1.1em" fill="currentColor" style="vertical-align:-0.15em"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg> ${i18n.t("settingsTitle")} <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${versionStr}</span> <span style="font-size: 0.6em; font-weight: normal; opacity: 0.5;">(${themeLabel})</span>`;
+      title.innerHTML = `${githubMarkSvg("1.1em")} ${i18n.t("settingsTitle")} <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${versionStr}</span> <span style="font-size: 0.6em; font-weight: normal; opacity: 0.5;">(${themeLabel})</span>`;
     }
 
     // 更新颜色按钮
@@ -695,11 +760,138 @@
   // 设置主题观察器
   setupThemeObserver();
 
+  /**
+   * 沉浸式滚动条的 CSS 规则生成器 —— **两处滚动宿主共用同一份**（审计 §2.2）。
+   *
+   * 背景：导航面板条目区（#mgga-nav-dock .mgga-nav-dock-body）与设置面板的两个
+   * 滚动区（内容区 .color-picker-content、关键词列表 #customKeywordsContainer）
+   * 都是滚动容器，但改前只有前者配了滚动条样式 ⇒ 在"系统/浏览器设置为始终显示
+   * 滚动条"的环境中（或 Firefox），两处观感会打架：一个细淡条，一个是带上下
+   * 步进箭头的经典粗条。
+   *
+   * @param {string[]} hosts     滚动宿主选择器（必须指向**真正 overflow:auto 的元素**）
+   * @param {string}   hoverHost 触发"滑块变实"的祖先选择器（鼠标进它，其内滚动条加深）
+   * @returns {string} 可直接拼进样式表的 CSS 文本
+   *
+   * 两条**必须遵守**的约束（都踩过，见 docs/fixes/2026-09-23-navdock-immersive-scrollbar.md）：
+   *  ① 宿主上绝不能出现 scrollbar-width（@supports 块内除外）：Chromium 121+ 里只要
+   *     它不等于 auto，该元素上**整组** ::-webkit-scrollbar* 规则会被直接忽略 ——
+   *     箭头原样回来、不报错、DevTools 里规则还显示"有效"。
+   *  ② 返回值会被嵌进模板字符串，注释里不能出现反引号（会提前闭合）。
+   */
+  function immersiveScrollbarCss(hosts, hoverHost) {
+    const join = (parts) => parts.join(",\n        ");
+    const sel = (suffix) => join(hosts.map((h) => h + suffix));
+    const hot = (pseudo) =>
+      join(hosts.map((h) => hoverHost + ":" + pseudo + " " + h + "::-webkit-scrollbar-thumb"));
+
+    return `
+        /* ===== 沉浸式滚动条 · 公共段（immersiveScrollbarCss 生成，勿手工改单处）=====
+           ① 干掉 Windows 经典滚动条的上下步进箭头（那对箭头是 ::-webkit-scrollbar-button
+              渲染出来的伪元素，不是内容）；② 轨道完全透明，滑块默认只是一抹淡灰、
+              悬停才变实；③ 8px 轨道里用 2px 透明描边 + padding-box 裁切，
+              视觉厚度只有 4px。 */
+        ${sel("::-webkit-scrollbar")} {
+            width: 8px !important;
+            height: 8px !important;
+            background: transparent !important;
+        }
+
+        ${sel("::-webkit-scrollbar-track")},
+        ${sel("::-webkit-scrollbar-track-piece")} {
+            background: transparent !important;
+            border: none !important;
+        }
+
+        ${sel("::-webkit-scrollbar-button")},
+        ${sel("::-webkit-scrollbar-button:vertical:decrement")},
+        ${sel("::-webkit-scrollbar-button:vertical:increment")},
+        ${sel("::-webkit-scrollbar-button:horizontal:decrement")},
+        ${sel("::-webkit-scrollbar-button:horizontal:increment")},
+        ${sel("::-webkit-scrollbar-corner")} {
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+            background: transparent !important;
+        }
+
+        ${sel("::-webkit-scrollbar-thumb")} {
+            background-color: rgba(127, 127, 127, 0.28) !important;
+            border: 2px solid transparent !important;
+            background-clip: padding-box !important;
+            border-radius: 8px !important;
+        }
+
+        /* 鼠标进入整个面板 ⇒ 滑块变实一档，避免"淡淡的看不清还能滚" */
+        ${hot("hover")},
+        ${hot("focus-within")} {
+            background-color: rgba(127, 127, 127, 0.5) !important;
+        }
+
+        /* 直接悬停滑块再深一档 */
+        ${sel("::-webkit-scrollbar-thumb:hover")} {
+            background-color: rgba(127, 127, 127, 0.72) !important;
+        }
+
+        /* Firefox 专属兜底：::-webkit-scrollbar-button 不被识别（好在 Gecko 本来
+           就不给滚动条画箭头），改用标准属性拿细条。@supports 探测在 Chromium
+           恒为 false，不会污染上面的 webkit 规则。 */
+        @supports (-moz-appearance: none) {
+            ${join(hosts)} {
+                scrollbar-width: thin !important;
+                scrollbar-color: rgba(127, 127, 127, 0.5) transparent !important;
+            }
+        }
+    `;
+  }
+
   // 添加CSS样式 - 对话框样式（固定不变）
   GM_addStyle(`
         :root {
-            --mgga-text-scale: 1.0em;
+            /* 设置面板（.color-picker-dialog）的**基准字号** —— 与两台悬浮球同源的
+               自适应思路：都吃 vmin，窗口/分辨率变了两者一起变。
+               改前面板字号是 --mgga-text-scale(1em) 定值 ⇒ 宽度恒为 20em = 280px，
+               而球按 vmin 能长到 56px，于是 4K 全屏下出现「球变大、面板纹丝不动」的
+               脱节（审计 §2.1）。
+               面板内所有尺寸都是 em ⇒ **只改这一个字号**，宽度/行高/间距/滚动条
+               随之同比缩放，不必逐个改。
+               取值：1280×896（vmin 896）→ 14px，与改前逐字相同（现有观感不变）；
+                     1920×1080 → 15.35px（面板 20em = 307px）；
+                     1440p 及以上封顶 18px（面板 360px）；1366×768 及以下兜底 14px。 */
+            --mgga-panel-font: clamp(14px, calc(0.735vmin + 7.41px), 18px);
             --mgga-btn-scale: 0.8em;
+            /* 悬浮球尺寸：**两台球共用一套**（Release 设置齿轮 / 仓库页导航球），
+               所以两处 width/height 都写 var(--mgga-fab-size)，想改一起改、想比也一眼能比。
+               自适应分辨率与比例：用 vmin —— 它同时吃宽和高，16:9 与 4:3 给出的值不同，
+               窗口拉窄拉矮也会跟着变（这是以前写死像素时做不到的）。
+               4.4vmin 的取法：1920×1080 → 47.5px，1280×900 → 39.6px，
+               1440p 及以上封顶 56px，1366×768 及以下兜底 38px。 */
+            --mgga-fab-size: clamp(38px, 4.4vmin, 56px);
+            /* 图标 = 球体的 41%（沿用导航球原本 18px / 44px 的比例），
+               球变大图标同比变大，不再出现"球缩了图标不缩"。 */
+            --mgga-fab-icon: calc(var(--mgga-fab-size) * 0.41);
+        }
+
+        /* 两台悬浮球共用的入场动画（页面刷新时各触发一次，温和不剧烈）。
+           **只动 opacity 与 scale，绝不动 transform**：导航球的垂直居中靠
+           transform: translateY(-50%) !important，而 !important 声明在层叠里高于
+           CSS 动画（动画低于 !important、高于普通声明）—— 动画一碰 transform 就被整条
+           忽略（表现为动画名生效、球纹丝不动）。scale 是**独立的个体变换属性**，
+           与 transform 正交：缩放绕中心发生，translateY(-50%) 的居中不受影响。 */
+        @keyframes mgga-fab-pop {
+            0%   { opacity: 0; scale: 0.9; }
+            60%  { opacity: 1; scale: 1.015; }
+            100% { opacity: 1; scale: 1; }
+        }
+
+        .mgga-fab-pop {
+            animation: mgga-fab-pop 0.48s cubic-bezier(0.33, 1, 0.68, 1);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .mgga-fab-pop {
+                animation: none;
+            }
         }
 
         /* 对话框样式 - 修复主题跟随问题 */
@@ -709,7 +901,14 @@
             left: 1em; /* 距离左侧缩进跟随缩放 */
             transform: translateY(-50%) translateX(-100%);
             border-radius: 0.5em;
-            padding: 1.25em;
+            /* 顶部内边距 6px = 导航面板 #mgga-nav-dock 的面板内边距，两处面板的
+               「顶边 → 标题栏顶边」因此都是「1px 边框 + 6px」，从面板顶边到分割线
+               的可视标题栏高度完全相同（真机 37.8px vs 37.8px）。
+               原先这里是 1.25em(17.5px)：标题栏上方多出一条 11.5px 的空带，
+               用户量到的「设置面板标题栏仍然比导航栏高」就是它；同时标题落在那段
+               可视区中心下方 6.25px ⇒「没有在标题栏内垂直居中」。
+               左/右/下保持 1.25em（内容区需要的呼吸，与标题栏高度无关）。 */
+            padding: 6px 1.25em 1.25em;
             box-shadow: 0 0.15em 1.5em rgba(0,0,0,0.2);
             z-index: 10000;
             min-width: 0 !important;
@@ -719,7 +918,9 @@
             max-height: calc(100vh - 1em);
             max-height: calc(100dvh - 1em);
             font-family: inherit; /* 继承页面字体 */
-            font-size: var(--mgga-text-scale); /* 文本字体总体缩放 */
+            /* 基准字号 = 随视口自适应的变量（审计 §2.1，定义见脚本开头 :root）。
+               它是**整块面板的缩放旋钮**：宽度 20em、行高、间距、滚动条都挂在 em 上。 */
+            font-size: var(--mgga-panel-font);
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
@@ -743,12 +944,11 @@
                 color: #24292f;
             }
 
-            .color-picker-header {
-                border-bottom: 1px solid #d8dee4;
-            }
+            /* 标题栏下边框已上提到基座规则（中性灰，主题无关），此处不再覆盖 */
 
+            /* 与导航面板标题栏同色：GitHub 的 fg.muted（浅色 #57606a） */
             .color-picker-title {
-                color: #24292f;
+                color: #57606a;
             }
 
             .color-picker-close {
@@ -767,6 +967,39 @@
                 border: 1px solid #d0d7de;
                 background: #f6f8fa;
             }
+
+            /* ---- 语义按钮 · 浅色档（Primer light）---- */
+            /* 确认 = primary：GitHub 的 button.primary（rest #1f883d / hover #1a7f37） */
+            .confirm-button {
+                background-color: #1f883d;
+                color: #ffffff;
+            }
+
+            .confirm-button:hover {
+                background-color: #1a7f37;
+            }
+
+            /* 取消 = neutral：GitHub 的 button.default（fg #24292f，描边用 rgba 而非
+               border，见基座注释） */
+            .cancel-button {
+                background-color: #f6f8fa;
+                color: #24292f;
+                box-shadow: inset 0 0 0 1px rgba(31, 35, 40, 0.15);
+            }
+
+            .cancel-button:hover {
+                background-color: #f3f4f6;
+            }
+
+            /* 重置 = danger：GitHub 的 button.danger（rest #cf222e / hover #a40e26） */
+            .reset-button {
+                background-color: #cf222e;
+                color: #ffffff;
+            }
+
+            .reset-button:hover {
+                background-color: #a40e26;
+            }
         }
 
         /* 暗色主题样式 */
@@ -777,12 +1010,11 @@
                 color: #c9d1d9;
             }
 
-            .color-picker-header {
-                border-bottom: 1px solid #21262d;
-            }
+            /* 标题栏下边框已上提到基座规则（中性灰，主题无关），此处不再覆盖 */
 
+            /* 与导航面板标题栏同色：GitHub 的 fg.muted（深色 #8b949e） */
             .color-picker-title {
-                color: #c9d1d9;
+                color: #8b949e;
             }
 
             .color-picker-close {
@@ -801,6 +1033,40 @@
                 border: 1px solid #30363d;
                 background: #161b22;
             }
+
+            /* ---- 语义按钮 · 深色档（Primer dark）---- */
+            /* 这一档就是审计里"没有深色变体"缺的部分：同一批颜色直接搬到深色面板上
+               会亮得刺眼，这里按 GitHub 深色主题各降/提一档。 */
+            /* 确认 = primary（rest #238636 / hover #29903b） */
+            .confirm-button {
+                background-color: #238636;
+                color: #ffffff;
+            }
+
+            .confirm-button:hover {
+                background-color: #29903b;
+            }
+
+            /* 取消 = neutral（fg #c9d1d9，底色 #21262d / hover #30363d） */
+            .cancel-button {
+                background-color: #21262d;
+                color: #c9d1d9;
+                box-shadow: inset 0 0 0 1px rgba(240, 246, 252, 0.10);
+            }
+
+            .cancel-button:hover {
+                background-color: #30363d;
+            }
+
+            /* 重置 = danger（rest #da3633 / hover #f85149） */
+            .reset-button {
+                background-color: #da3633;
+                color: #ffffff;
+            }
+
+            .reset-button:hover {
+                background-color: #f85149;
+            }
         }
 
         /* 对话框可见状态 */
@@ -811,35 +1077,76 @@
             transform: translateY(-50%) translateX(0);
         }
 
+        /* 标题栏：与导航面板标题栏（#mgga-nav-dock .mgga-nav-dock-header）同一套
+           标准 —— 高度、内边距、下边框、字号、字重、图标全部对齐，改一处必须改两处。
+           ① padding 2px 4px 6px + margin-bottom 2px = 导航栏定的高度标准，取代原来的
+              「margin-bottom 1em + padding-bottom 0.5em」（那套比导航栏高出一大截）；
+           ② container-type: inline-size 让标题栏成为尺寸容器，标题的 clamp(…cqi…)
+              才有参照系 —— 标题栏越窄，标题字号越小，而不是被省略号截断；
+           ③ 下边框用**主题无关的中性灰**：本对话框的配色走 prefers-color-scheme 媒体
+              查询（老一套），与 GitHub 自己的 --borderColor-muted（跟随 GitHub 主题）
+              是两套体系，直接引用变量会出现「浅色对话框 + 深色变量」的错配；
+           ④ 标题栏高度只是**一半**：用户肉眼丈量的「标题栏」其实是「面板顶边 → 分割线」
+              这段可视区，它还包含面板自己的 border + padding（导航面板 1px + 6px，
+              对话框见 .color-picker-dialog 的 padding-top，必须同为 6px）。只把
+              .header 修到 29.8px 而放着对话框那 17.5px 的顶部内边距不管，真机上这段
+              可视区仍然是 49.3px vs 37.8px —— 用户反馈的「仍然不一致、没垂直居中」
+              正是这里。上下 padding 之所以是 2px/6px 而不对称：内容相对**可视区**中心
+              的偏差才是眼睛看到的居中（真机 +0.5px）；改成 4px/4px 反而会偏下 3.5px。*/
         .color-picker-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 1em;
-            padding-bottom: 0.5em;
+            gap: 6px;
+            padding: 2px 4px 6px;
+            margin-bottom: 2px;
+            border-bottom: 1px solid rgba(125, 125, 125, 0.25);
             flex-shrink: 0;
+            container-type: inline-size;
         }
 
         .color-picker-title {
-            font-weight: bold;
+            font-weight: 600;
             margin: 0;
-            font-size: 1.25em;
+            /* 兜底：不认容器查询单位的浏览器按导航栏的 13px 静态渲染 */
+            font-size: 13px;
+            /* 自适应缩小：1cqi = 标题栏内容宽的 1%（真机实测：内容宽 198px → 12.87px）。
+               内容宽 ≥200px 时封顶 13px，再窄才逐档缩到 11px 下限 —— 正常宽度下与
+               导航栏同为 13px（真统一），只有挤到放不下时才缩小，而不是弹省略号。 */
+            font-size: clamp(11px, 6.5cqi, 13px);
+            color: #57606a;
             min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
 
+        /* 关闭控件：**与导航面板关闭按钮同一套视觉**（用户 2026-09-23 要求
+           "使用仓库页导航栏的关闭按钮样式"）。原来是个 <span>×</span>：字形是
+           乘号（×，U+00D7）而不是叉号（✕，U+2715），hover 还会 scale(1.1) 放大
+           —— 导航面板是 <button>✕</button>，hover 只换底色不位移。
+           换成 button 后**必须显式复位**：button 不继承页面字体（font-family）、
+           自带灰色底与 2px 凹陷边框，不写这几条就会在页面里露出一圈系统按钮。
+           尺寸仍与导航面板成对（14px / line-height 1.2 / padding 2px 6px），
+           所以两处标题栏高度不受影响。 */
         .color-picker-close {
             cursor: pointer;
-            padding: 0.3em 0.6em;
-            font-size: 1.5em;
-            transition: all 0.3s ease;
+            padding: 2px 6px;
+            font-size: 14px;
+            line-height: 1.2;
+            border-radius: 6px;
+            font-family: inherit;
+            background: transparent;
+            border: none;
+            -webkit-appearance: none;
+            appearance: none;
+            transition: color 0.2s ease, background 0.2s ease;
             flex-shrink: 0;
         }
 
+        /* hover 与导航面板一致：底色换成中性灰、文字变正文色，**不放大不位移** */
         .color-picker-close:hover {
-            transform: scale(1.1);
+            background: rgba(125, 125, 125, 0.18);
         }
 
         .color-picker-content {
@@ -854,7 +1161,17 @@
             overscroll-behavior: contain;
             /* 负 margin 吃掉对话框 padding，滚动条贴边 */
             margin: 0 -0.35em;
-            padding: 0 0.35em;
+            /* 上内边距：**把「分割线 → 第一行」补成和行间节奏一样的 0.75em**
+               （用户 2026-09-23 反馈「标题栏和第一行设置项的安全距离不正常」）。
+               真机实测改前是 2px —— 那 2px 还不是这里给的，是标题栏自己的
+               margin-bottom:2px：第一行（.color-picker-row 无自身 padding）于是
+               紧贴分割线，而它下面每一行之间都是 10.5px(0.75em)，第一行看着像被
+               挤在标题栏上。这里用 calc 补差额而不是把标题栏的 margin-bottom 改大：
+               那个 margin 属于"两处标题栏共用标准"的一部分（smoke 闸门成对锁死），
+               动它会让设置面板与导航面板的标题栏标准分叉；间距属于内容区自己的
+               节奏，就该在内容区解决。滚动时这段 padding 会随内容滚出，
+               与 GitHub 自身的滚动区行为一致。 */
+            padding: calc(0.75em - 2px) 0.35em 0;
         }
 
         .color-picker-row {
@@ -864,6 +1181,14 @@
             justify-content: space-between;
             flex-wrap: wrap;
             min-width: 0;
+            /* 行节奏统一（审计 §1.5）：这一行的行高由"行内最高的子项"决定 ——
+               带颜色块的行走 .color-button（0.8em 字号 × 2em = 1.6em ≈ 22.4px），
+               不带色块的行走 .color-toggle-btn（0.8em × 1.8em ≈ 20.2px）
+               ⇒ 真机实测前三行 22.39px、后两行 21px，差 1.39px（"下两行挤一点"）。
+               这里给整行一个下限 1.6em —— 正好是颜色块那一档的高度，六行因此同高。
+               align-items: center 保证变高后内容仍垂直居中；**不动按钮自身尺寸**，
+               因为 .color-button / .color-toggle-btn 已被标题栏那套成对闸门间接约束。 */
+            min-height: 1.6em;
         }
 
         .menu-command {
@@ -884,9 +1209,16 @@
             display: flex;
             justify-content: flex-end;
             gap: 0.75em;
-            margin-top: 0.75em;
+            /* 按钮行上方的间距**只在这里生效**（审计 §1.2）：模板里原本内联了
+               style="margin-top: 1em"，内联优先级高于本规则 ⇒ 改这里一直是
+               "改了没反应"。删掉内联后把那个 1em 收到这里，视觉零位移，
+               从此调间距只改这一处。 */
+            margin-top: 1em;
             flex-shrink: 0;
             flex-wrap: wrap;
+            /* 与上面的 margin 相加 = 1.35em，与改前（内联 1em + 本行 0.35em）
+               逐字一致；这段 padding 本身是给按钮 hover 的 translateY(-2px)
+               留的上抬余量。 */
             padding-top: 0.35em;
         }
 
@@ -901,37 +1233,22 @@
             font-family: inherit;
         }
 
-        /* 按钮颜色保持不变 */
-        .cancel-button {
-            background-color: #007bff; /* 蓝色背景 */
-            color: white;
-        }
-
-        .cancel-button:hover {
-            background-color: #0069d9;
+        /* 三颗按钮共用的 hover 位移（原来三处各写一遍）；配色按语义走、
+           并按主题分档 —— 见下面两个 prefers-color-scheme 块。
+           注意配色声明**只能**放主题块里：写到基座会盖住深色档，
+           因为媒体查询里的规则优先级并不更高（同权重时按源码顺序，而基座在前）。 */
+        .dialog-button:hover {
             transform: translateY(-2px);
         }
 
-        .confirm-button {
-            background-color: #ffa500; /* 橙黄色背景 */
-            color: black;
-        }
-
-        .confirm-button:hover {
-            background-color: #e69500;
-            transform: translateY(-2px);
-        }
-
-        /* 新添加的重置按钮样式 */
-        .reset-button {
-            background-color: #ff6b6b; /* 浅红色背景 */
-            color: white;
-        }
-
-        .reset-button:hover {
-            background-color: #ff5252; /* 悬停时加深红色 */
-            transform: translateY(-2px);
-        }
+        /* 语义配色（审计 §1.3）。改前是 Bootstrap 时代的亮蓝/亮橙/亮红，
+           而且**没有深色变体**（三条规则的色值在整份样式表里各只出现一次，
+           两个 prefers-color-scheme 块都没覆盖）⇒ 深色面板上三颗按钮格外扎眼；
+           语义也是反的（"确认"用橙、"取消"用蓝）。
+           现按 Primer 语义对齐：重置 = danger、取消 = neutral、确认 = primary，
+           与脚本里"添加"按钮（#2da44e 绿）同属一套。
+           "取消"用 inset box-shadow 描边而非 border：**不占盒模型**，
+           三颗按钮的高度因此逐字不变（上一轮刚把面板间距调准，不做几何位移）。 */
 
         .color-button {
             font-size: var(--mgga-btn-scale);
@@ -980,8 +1297,14 @@
             top: 50%;
             /* 保证居中显示，拖动时我们会修改top实现位移 */
             transform: translateY(-50%);
-            width: 2.8em;
-            height: 2.8em;
+            /* 尺寸与导航球**同源**（都取 --mgga-fab-size，随分辨率/比例自适应）
+               且同为 border-box：过去这里是 2.8em × 0.8em 字号 = 31.36px，
+               导航球是写死的 44px，两枚球一大一小（真机实测 31.36 vs 44）。 */
+            width: var(--mgga-fab-size);
+            height: var(--mgga-fab-size);
+            /* 显式 border-box：本元素是 div（默认 content-box），而导航球是 button
+               （UA 默认 border-box）—— 不写这句，两枚球会因为那 1px 边框差出 2px */
+            box-sizing: border-box;
             background: rgba(255, 255, 255, 0.85);
             border: 1px solid #d0d7de;
             border-radius: 50%;
@@ -994,6 +1317,13 @@
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             user-select: none;
             transition: opacity 0.4s ease, margin-left 0.4s ease, background 0.2s ease;
+        }
+
+        /* 图标尺寸同样取自共用变量（导航球那条规则里是同一个值） */
+        #mgga-float-btn > svg {
+            width: var(--mgga-fab-icon);
+            height: var(--mgga-fab-icon);
+            pointer-events: none;
         }
 
         #mgga-float-btn:hover {
@@ -1034,6 +1364,20 @@
             flex-wrap: wrap;
             gap: 0.4em;
             align-content: flex-start;
+            /* 高度/滚动/下边距从**模板内联样式**下沉到这里（审计 §1.6）。
+               原来是 style="max-height: min(16em, 28vh); overflow-y: auto;
+               margin-bottom: 0.5em" —— 内联优先级高于本规则，所以想主题化、
+               想统一滚动条、想按视口调高度都得回模板里改，且与 CSS 混成两套。
+               下沉后本容器才是一个"可被样式表描述"的**独立滚动宿主**，
+               沉浸式滚动条（见文件下方公共段）才能挂到它上面。 */
+            max-height: min(16em, 28vh);
+            overflow-y: auto;
+            margin-bottom: 0.5em;
+            /* 嵌套滚动不接力（审计 §1.1）：改前实测 overscroll-behavior 是 auto，
+               而本容器真的溢出（内容 456px / 视窗 168–224px）⇒ 鼠标停在这里滚到底，
+               滚动会继续传给外层内容区、再传给整页。同一脚本里导航面板的条目区
+               用的是 contain，两处行为必须一致。 */
+            overscroll-behavior: contain;
         }
 
         .custom-keyword-item {
@@ -1544,20 +1888,22 @@
             transform: scale(1.1);
         }
 
-        /* Pickr库样式适配 */
-        .pcr-app {
-            font-size: 0.9em !important;
-        }
+        /* （此处原有三条外部取色库（Pickr / Huebee / Spectrum）的样式适配规则，
+           已删 —— 审计 §1.4：对应的三个同步分支恒不执行（分支读的实例字段全文
+           只被读取、从未赋值，脚本里也没有任何加载这三个库的代码），
+           这三条规则**永不生效**。删掉后取色器只剩内置一条路径，观感反而一致。） */
 
-        /* Huebee库样式适配 */
-        .huebee {
-            font-size: 0.9em !important;
-        }
-
-        /* Spectrum库样式适配 */
-        .sp-container {
-            font-size: 0.9em !important;
-        }
+        /* 沉浸式滚动条（审计 §2.2）：本面板有**两个**滚动宿主 —— 内容区与关键词列表 ——
+           改前一个滚动条样式都没有，与导航面板的观感不一致。规则来自公共段，
+           与导航面板逐条同源（那边只是换了宿主选择器）。
+           hoverHost 用整个对话框：鼠标进面板即让滑块变实。 */
+        ${immersiveScrollbarCss(
+            [
+                ".color-picker-dialog .color-picker-content",
+                ".color-picker-dialog #customKeywordsContainer",
+            ],
+            ".color-picker-dialog"
+        )}
     `);
 
   /**
@@ -1567,8 +1913,8 @@
   function buildSettingsDialogHTML(customColors) {
     return `
             <div class="color-picker-header">
-                <h3 class="color-picker-title"><svg viewBox="0 0 16 16" width="1.1em" height="1.1em" fill="currentColor" style="vertical-align:-0.15em"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg> ${i18n.t("settingsTitle")} <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${getScriptVersion()}</span></h3>
-                <span class="color-picker-close" title="${i18n.t("close")}">&times;</span>
+                <h3 class="color-picker-title">${githubMarkSvg("1.1em")} ${i18n.t("settingsTitle")} <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${getScriptVersion()}</span></h3>
+                <button type="button" class="color-picker-close" aria-label="${i18n.t("close")}" title="${i18n.t("close")}">✕</button>
             </div>
             <div class="color-picker-content">
                 <div class="color-picker-row">
@@ -1593,7 +1939,7 @@
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5em;">
                         <span class="menu-command"><button class="color-toggle-btn" id="highlightToggleBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("highlightTitle")}</span>
                     </div>
-                    <div id="customKeywordsContainer" style="max-height: min(16em, 28vh); overflow-y: auto; margin-bottom: 0.5em;">
+                    <div id="customKeywordsContainer">
                         <!-- 动态渲染关键词列表 -->
                     </div>
                     <div style="display: flex; gap: 0.5em; align-items: center; flex-wrap: wrap;">
@@ -1603,7 +1949,7 @@
                     </div>
                 </div>
             </div>
-            <div class="button-row" style="margin-top: 1em;">
+            <div class="button-row">
                 <button class="dialog-button reset-button" title="${i18n.t("resetTitle")}">${i18n.t("reset")}</button>
                 <div style="margin-left: auto; display: flex; gap: 0.75em; flex-wrap: wrap;">
                     <button class="dialog-button cancel-button" id="cancelDialogBtn">${i18n.t("cancel")}</button>
@@ -1652,18 +1998,13 @@
       if (typeof refreshRealtimeStyles === "function") {
         refreshRealtimeStyles();
       }
-
-      // 更新三个库的色值
-      if (window.Pickr && panel._pickr) {
-        panel._pickr.setColor(newColor);
-      }
-      if (window.Huebee && panel._huebee) {
-        panel._huebee.setColor(newColor);
-      }
-      if (window.$ && panel._spectrum) {
-        panel._spectrum.spectrum("set", newColor);
-      }
     };
+
+    // （此处原有 Pickr / Huebee / Spectrum 三条外部库同步分支，已删 —— 审计 §1.4。
+    //   它们是死代码：分支读的实例字段**全文只被读取、从未赋值**，脚本里也没有任何
+    //   加载这三个库的逻辑 ⇒ 三个 if 恒不执行。本面板只用内置取色器（见下方
+    //   initializeLibraries 里的 canvas 实现）；将来要真支持某个库，必须先有加载
+    //   与实例化，届时连同这三条一起重加。）
 
     // 初始化内置颜色选择器（无需外部库）
     const initializeLibraries = () => {
@@ -3972,8 +4313,13 @@
 
     const btn = document.createElement("div");
     btn.id = "mgga-float-btn";
-    btn.innerHTML = "⚙️";
+    // 图标：SVG（octicon gear-16），不再是 unicode ⚙️ —— emoji 由系统字体渲染，
+    // 尺寸/基线/颜色都不受控，与导航球那枚 SVG 摆在一起粗细和大小都不同。
+    // 尺寸走 CSS 的 --mgga-fab-icon（与导航球同一个变量），见 #mgga-float-btn > svg。
+    btn.innerHTML = gearIconSvg();
     btn.title = "Make-GitHub-Great-Again 设置";
+    btn.setAttribute("aria-label", btn.title);
+    btn.setAttribute("role", "button");
     document.body.appendChild(btn);
 
     let isDragging = false;
@@ -4038,6 +4384,10 @@
     if (dialog) {
       btn.classList.add("hidden-to-right");
     }
+
+    // 入场动画：必须在"是否初始隐藏"判定**之后**触发 —— 隐藏态（本页刷新时面板
+    // 恰好开着）不播，否则它会先亮一下再淡出。真正的首次出现（页面刷新）在这里播一次。
+    triggerFabPop(btn);
 
     // 分辨率 / 缩放 / 窗口尺寸变化时，保证悬浮按钮始终在屏幕内
     const floatBtnViewportHandler = () => {
@@ -4420,8 +4770,11 @@
         top: 50% !important;
         transform: translateY(-50%) !important;
         z-index: 2147483000 !important;
-        width: 44px !important;
-        height: 44px !important;
+        /* 尺寸与 Release 悬浮齿轮**同源**：都用 --mgga-fab-size（定义在脚本开头的
+           :root 块里，随分辨率/比例自适应）。原来这里写死 44px，设置面板那枚是
+           31.36px，两枚球一大一小。 */
+        width: var(--mgga-fab-size, 44px) !important;
+        height: var(--mgga-fab-size, 44px) !important;
         padding: 0 !important;
         margin: 0 !important;
         border-radius: 50% !important;
@@ -4434,6 +4787,9 @@
         justify-content: center !important;
         cursor: pointer !important;
         line-height: 1 !important;
+        /* button 是 border-box（UA 默认），显式写出来是为了与设置面板那枚 div
+           在 box-sizing 上严格一致 —— 不然 1px 边框会差出 2px */
+        box-sizing: border-box !important;
       }
 
       /* 对齐 Release 悬浮按钮：拖拽/显隐过渡节奏一致 */
@@ -4448,28 +4804,15 @@
         margin-left: 2em !important;
       }
 
+      /* 图标尺寸与 Release 悬浮齿轮同源（同一个变量、同一个值） */
       #mgga-nav-dock-toggle > svg {
-        width: 18px !important;
-        height: 18px !important;
+        width: var(--mgga-fab-icon, 18px) !important;
+        height: var(--mgga-fab-icon, 18px) !important;
         pointer-events: none !important;
       }
 
-      #mgga-nav-dock-toggle .mgga-nav-dock-badge {
-        position: absolute !important;
-        top: -4px !important;
-        right: -4px !important;
-        min-width: 16px !important;
-        height: 16px !important;
-        padding: 0 4px !important;
-        border-radius: 8px !important;
-        background: #0969da !important;
-        color: #ffffff !important;
-        font-size: 10px !important;
-        font-weight: 600 !important;
-        line-height: 16px !important;
-        text-align: center !important;
-        pointer-events: none !important;
-      }
+      /* 导航项数量蓝色气泡已按用户要求移除 —— 相关的 CSS 规则与 JS 更新函数
+         同时删除（smoke 里有闸门断言源码里再不出现该标识符，避免只删一半）。 */
 
       /* 对齐 Release 设置面板：初始左侧屏外 + 淡出，展开滑入；
          垂直居中锚定，高度随内容自适应但绝不出屏 */
@@ -4527,95 +4870,71 @@
         overscroll-behavior: contain !important;
       }
 
-      /* 沉浸式滚动条：① 干掉 Windows 经典滚动条的上下步进箭头（那对箭头是
-         「::-webkit-scrollbar-button」渲染出来的伪元素，不是内容）；② 轨道完全
-         透明，滑块默认只是一抹淡灰、悬停才变实；③ 8px 轨道里用 2px 透明描边 +
-         padding-box 裁切，视觉厚度只有 4px。
-         注意：**不能**给这里补「scrollbar-width」—— 在 Chromium 121+ 上只要它
-         不是 auto，整组「::-webkit-scrollbar」规则会被直接忽略（箭头又会回来）。
-         Firefox 天然没有箭头，用标准属性单独喂（见下方 @supports 块）。*/
-      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar {
-        width: 8px !important;
-        height: 8px !important;
-        background: transparent !important;
-      }
+      /* 沉浸式滚动条（审计 §2.2）：规则已抽进公共段 immersiveScrollbarCss()，
+         与本脚本里设置面板的两个滚动宿主（.color-picker-content /
+         #customKeywordsContainer）**共用同一份**。改前这 10 来条规则是本面板
+         手写的、只服务本面板，设置面板一条都没有 ⇒ 在"始终显示滚动条"的环境里
+         两处观感打架（一边细淡条、一边带箭头的经典粗条）。
+         现在两处的差别只剩宿主选择器与 hoverHost。 */
+      ${immersiveScrollbarCss(["#mgga-nav-dock .mgga-nav-dock-body"], "#mgga-nav-dock")}
 
-      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-track,
-      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-track-piece {
-        background: transparent !important;
-        border: none !important;
-      }
-
-      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-button,
-      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-button:vertical:decrement,
-      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-button:vertical:increment,
-      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-button:horizontal:decrement,
-      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-button:horizontal:increment,
-      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-corner {
-        display: none !important;
-        width: 0 !important;
-        height: 0 !important;
-        background: transparent !important;
-      }
-
-      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-thumb {
-        background-color: rgba(127, 127, 127, 0.28) !important;
-        border: 2px solid transparent !important;
-        background-clip: padding-box !important;
-        border-radius: 8px !important;
-      }
-
-      #mgga-nav-dock:hover .mgga-nav-dock-body::-webkit-scrollbar-thumb,
-      #mgga-nav-dock:focus-within .mgga-nav-dock-body::-webkit-scrollbar-thumb {
-        background-color: rgba(127, 127, 127, 0.5) !important;
-      }
-
-      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-thumb:hover {
-        background-color: rgba(127, 127, 127, 0.72) !important;
-      }
-
-      /* Firefox 专属：「::-webkit-scrollbar-button」不被识别（好在 Gecko 本来
-         就不给滚动条画箭头），改用标准属性拿细条。@supports 探测在 Chromium
-         恒为 false，不会污染上面的 webkit 规则。*/
-      @supports (-moz-appearance: none) {
-        #mgga-nav-dock > .mgga-nav-dock-body {
-          scrollbar-width: thin !important;
-          scrollbar-color: rgba(127, 127, 127, 0.5) transparent !important;
-        }
-      }
-
-      /* 面板标题栏：对齐 Release 设置面板 header + 关闭按钮。
-         关键：它**不在滚动容器里**。面板是 flex 列，标题栏是第一个 flex 子项，
+      /* 面板标题栏：**标题栏标准的定义处**（Release 设置面板的 .color-picker-header
+         按同一套值对齐，两处必须成对修改）。标准含**面板自身的顶部内边距 6px**
+         （见上面 #mgga-nav-dock 的 padding）—— 用户丈量的「标题栏高度」是
+         「面板顶边 → 分割线」= 1px 边框 + 6px + .header(29.8px) = 37.8px；
+         对话框那边 .color-picker-dialog 的 padding-top 必须同为 6px，否则这段可视区
+         会多出十几像素、内容也会显得没居中（用户 2026-09-23 的第二次反馈）。
+         结构上它**不在滚动容器里**：面板是 flex 列，标题栏是第一个 flex 子项，
          滚动口（.mgga-nav-dock-body）从它下沿才开始。所以：
          · 标题永远不会被滚上去、也不会被容器裁掉 —— 上一版是给 position:sticky
            打补丁（前提是"面板自己滚"），现在那个前提被直接去掉了，更彻底；
-         · 滚动条只画在 body 上 ⇒ 标题栏那一行不会出现滚动条（本次诉求）。
+         · 滚动条只画在 body 上 ⇒ 标题栏那一行不会出现滚动条。
          于是上一版 sticky 的三条配套（不透明背景 / z-index / 同色补边）全部作废：
          它们都是为"滚动内容会从标题底下穿过"而生，而现在滚动内容根本不在同一层。
          唯一必须留的是 flex-shrink:0 —— 面板被 max-height 压短时标题栏不许被
-         压缩，收缩的只能是 body（这样滚动条才落在标题栏下方）。*/
+         压缩，收缩的只能是 body（这样滚动条才落在标题栏下方）。
+         本次新增：
+         · 标记 + 版本号向左靠、关闭按钮靠右（justify-content:flex-start +
+           close 的 margin-left:auto），对齐设置面板「左侧标题、右侧关闭」的排布；
+         · container-type: inline-size 让标题栏成为尺寸容器，标题按容器宽度
+           自适应缩小（见 .mgga-nav-dock-header-title 的 clamp）。*/
       #mgga-nav-dock .mgga-nav-dock-header {
         flex: 0 0 auto !important;
         display: flex !important;
         align-items: center !important;
-        justify-content: space-between !important;
+        justify-content: flex-start !important;
+        gap: 6px !important;
         padding: 2px 4px 6px !important;
         margin-bottom: 2px !important;
         border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted, rgba(125, 125, 125, 0.25))) !important;
+        container-type: inline-size !important;
       }
 
       #mgga-nav-dock .mgga-nav-dock-header-title {
+        /* 兜底：不认容器查询单位的浏览器按静态 13px 渲染 */
         font-size: 13px !important;
+        /* 自适应缩小：内容宽 ≥200px 时封顶 13px，再窄才缩，11px 是下限 */
+        font-size: clamp(11px, 6.5cqi, 13px) !important;
         font-weight: 600 !important;
         color: var(--fgColor-muted, var(--color-fg-muted, #59636e)) !important;
+        /* 缩小仍放不下时（极窄视口）退到省略号，绝不允许把关闭按钮挤出去 */
+        min-width: 0 !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+      }
+
+      /* 印记随标题字号一起缩（宽高都是 em）*/
+      #mgga-nav-dock .mgga-nav-dock-header-title > svg {
+        flex: none !important;
       }
 
       #mgga-nav-dock .mgga-nav-dock-header-version {
-        font-size: 10px !important;
+        /* 0.8em：跟着标题字号自适应缩放（原先是写死的 10px，标题缩了它不缩） */
+        font-size: 0.8em !important;
         font-weight: normal !important;
         color: var(--fgColor-muted, var(--color-fg-muted, #59636e)) !important;
         opacity: 0.7 !important;
-        margin-left: 6px !important;
         white-space: nowrap !important;
       }
 
@@ -4628,6 +4947,10 @@
         border-radius: 6px !important;
         font-size: 14px !important;
         line-height: 1.2 !important;
+        /* 标题栏改成 flex-start 排布后，靠 auto 外边距把关闭按钮顶到最右
+           （等价于设置面板「左侧标题、右侧关闭」的 space-between 效果，
+           但不会像 space-between 那样把版本号甩到标题与关闭按钮中间） */
+        margin-left: auto !important;
       }
 
       #mgga-nav-dock .mgga-nav-dock-close:hover {
@@ -7028,7 +7351,8 @@
     panel.classList.toggle("mgga-visible", navDockExpanded);
     panel.setAttribute("data-mgga-mutation-guard", "1");
 
-    // 标题栏 + 关闭按钮：对齐 Release 设置面板结构
+    // 标题栏 + 关闭按钮：与 Release 设置面板同一套标题栏标准
+    // （高度/内边距/下边框/字号/字重/图标，判据见 injectNavDockStyle 里的 header 规则）
     const header = document.createElement("div");
     header.className = "mgga-nav-dock-header";
     const title = document.createElement("span");
@@ -7036,6 +7360,10 @@
     // 品牌名，不是可本地化文案（与 verSpan 的 "Make-GitHub-Great-Again" 同理）；
     // 面板的无障碍名仍走 panel 的 aria-label = i18n.t("navDock")
     title.textContent = NAV_DOCK_BRAND;
+    // 补上设置面板那枚 GitHub 印记：与文字同层内联，随标题字号一起缩放。
+    // 走 afterbegin 插在文字之前，所以 title.textContent 仍是纯 "MGGA"
+    // （静态闸门按 NAV_DOCK_BRAND 断言，这里不给它添乱）。
+    title.insertAdjacentHTML("afterbegin", githubMarkSvg("1.1em") + " ");
     // 脚本版本号（与设置面板一致）
     const verSpan = document.createElement("span");
     verSpan.className = "mgga-nav-dock-header-version";
@@ -7161,7 +7489,7 @@
       eye: "M8 2c1.981 0 3.671.992 4.933 2.078 1.27 1.091 2.187 2.345 2.637 3.023a1.62 1.62 0 0 1 0 1.798c-.45.678-1.367 1.932-2.637 3.023C11.67 13.008 9.981 14 8 14c-1.981 0-3.671-.992-4.933-2.078C1.797 10.83.88 9.576.43 8.898a1.62 1.62 0 0 1 0-1.798c.45-.677 1.367-1.931 2.637-3.022C4.33 2.992 6.019 2 8 2ZM1.679 7.932a.12.12 0 0 0 0 .136c.411.622 1.241 1.75 2.366 2.717C5.176 11.758 6.527 12.5 8 12.5c1.473 0 2.825-.742 3.955-1.715 1.124-.967 1.954-2.096 2.366-2.717a.12.12 0 0 0 0-.136c-.412-.621-1.242-1.75-2.366-2.717C10.824 4.242 9.473 3.5 8 3.5c-1.473 0-2.825.742-3.955 1.715-1.124.967-1.954 2.096-2.366 2.717ZM8 10a2 2 0 1 1-.001-3.999A2 2 0 0 1 8 10Z",
       play: "M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM6.379 5.227A.25.25 0 0 0 6 5.442v5.117a.25.25 0 0 0 .379.214l4.264-2.559a.25.25 0 0 0 0-.428Z",
       table: "M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0 1 14.25 16H1.75A1.75 1.75 0 0 1 0 14.25ZM6.5 6.5v8h7.75a.25.25 0 0 0 .25-.25V6.5Zm8-1.5V1.75a.25.25 0 0 0-.25-.25H6.5V5Zm-9.5 1.5H1.5v7.75c0 .138.112.25.25.25H5Zm0-1.5V1.5H1.75a.25.25 0 0 0-.25.25V5Z",
-      gear: "M8 0a8.2 8.2 0 0 1 .701.031C9.444.095 9.99.645 10.16 1.29l.288 1.107c.018.066.079.158.212.224.231.114.454.243.668.386.123.082.233.09.299.071l1.103-.303c.644-.176 1.392.021 1.82.63.27.385.506.792.704 1.218.315.675.111 1.422-.364 1.891l-.814.806c-.049.048-.098.147-.088.294.016.257.016.515 0 .772-.01.147.039.246.088.294l.814.806c.475.469.679 1.216.364 1.891a7.977 7.977 0 0 1-.704 1.217c-.428.61-1.176.807-1.82.63l-1.102-.302c-.067-.019-.177-.011-.3.071a5.909 5.909 0 0 1-.668.386c-.133.066-.194.158-.211.224l-.29 1.106c-.168.646-.715 1.196-1.458 1.26a8.006 8.006 0 0 1-1.402 0c-.743-.064-1.289-.614-1.458-1.26l-.289-1.106c-.018-.066-.079-.158-.212-.224a5.738 5.738 0 0 1-.668-.386c-.123-.082-.233-.09-.299-.071l-1.103.303c-.644.176-1.392-.021-1.82-.63a8.12 8.12 0 0 1-.704-1.218c-.315-.675-.111-1.422.363-1.891l.815-.806c.05-.048.098-.147.088-.294a6.214 6.214 0 0 1 0-.772c.01-.147-.038-.246-.088-.294l-.815-.806C.635 6.045.431 5.298.746 4.623a7.92 7.92 0 0 1 .704-1.217c.428-.61 1.176-.807 1.82-.63l1.102.302c.067.019.177.011.3-.071.214-.143.437-.272.668-.386.133-.066.194-.158.211-.224l.29-1.106C6.009.645 6.556.095 7.299.03 7.53.01 7.764 0 8 0Zm-.571 1.525c-.036.003-.108.036-.137.146l-.289 1.105c-.147.561-.549.967-.998 1.189-.173.086-.34.183-.5.29-.417.278-.97.423-1.529.27l-1.103-.303c-.109-.03-.175.016-.195.045-.22.312-.412.644-.573.99-.014.031-.021.11.059.19l.815.806c.411.406.562.957.53 1.456a4.709 4.709 0 0 0 0 .582c.032.499-.119 1.05-.53 1.456l-.815.806c-.081.08-.073.159-.059.19.162.346.353.677.573.989.02.03.085.076.195.046l1.102-.303c.56-.153 1.113-.008 1.53.27.161.107.328.204.501.29.447.222.85.629.997 1.189l.289 1.105c.029.109.101.143.137.146a6.6 6.6 0 0 0 1.142 0c.036-.003.108-.036.137-.146l.289-1.105c.147-.561.549-.967.998-1.189.173-.086.34-.183.5-.29.417-.278.97-.423 1.529-.27l1.103.303c.109.029.175-.016.195-.045.22-.313.411-.644.573-.99.014-.031.021-.11-.059-.19l-.815-.806c-.411-.406-.562-.957-.53-1.456a4.709 4.709 0 0 0 0-.582c-.032-.499.119-1.05.53-1.456l.815-.806c.081-.08.073-.159.059-.19a6.464 6.464 0 0 0-.573-.989c-.02-.03-.085-.076-.195-.046l-1.102.303c-.56.153-1.113.008-1.53-.27a4.44 4.44 0 0 0-.501-.29c-.447-.222-.85-.629-.997-1.189l-.289-1.105c-.029-.11-.101-.143-.137-.146a6.6 6.6 0 0 0-1.142 0ZM11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM9.5 8a1.5 1.5 0 1 0-3.001.001A1.5 1.5 0 0 0 9.5 8Z",
+      gear: FAB_GEAR_PATH,
     };
     const key = String(label || "").toLowerCase();
     let d = null;
@@ -7238,21 +7566,6 @@
     icon.appendChild(path);
     fab.appendChild(icon);
     return fab;
-  }
-
-  function updateNavDockFabBadge(fab, count) {
-    if (!fab) return;
-    let badge = fab.querySelector(".mgga-nav-dock-badge");
-    if (!count) {
-      if (badge) badge.remove();
-      return;
-    }
-    if (!badge) {
-      badge = document.createElement("span");
-      badge.className = "mgga-nav-dock-badge";
-      fab.appendChild(badge);
-    }
-    badge.textContent = count > 99 ? "99+" : String(count);
   }
 
   function bindNavDockFab(fab, panel) {
@@ -7551,12 +7864,8 @@
         existing.dataset.mggaNavDockVer === STRUCT_VER
       ) {
         // 面板内容未变：不重建（不产生任何 DOM 变更），只补写廉价签名，
-        // 让下一轮走早短路；徽标同步刷新。
+        // 让下一轮走早短路。
         existing.dataset.mggaNavDockCheapSig = cheapSig;
-        updateNavDockFabBadge(
-          document.getElementById(NAV_DOCK_TOGGLE_ID),
-          items.length
-        );
         return;
       }
 
@@ -7568,12 +7877,16 @@
       freshPanel.dataset.mggaNavDockCount = String(items.length);
       const freshFab = buildNavDockFab();
       bindNavDockFab(freshFab, freshPanel);
-      updateNavDockFabBadge(freshFab, items.length);
       if (existing) existing.remove();
       const existingFab = document.getElementById(NAV_DOCK_TOGGLE_ID);
       if (existingFab) existingFab.remove();
       document.body.appendChild(freshPanel);
       document.body.appendChild(freshFab);
+      // 重建后把展开态 UI 重新同步一次：新球的 mgga-dock-fab-hidden 由这里补上
+      // （旧实现只在油猴菜单/点击时同步，面板开着时重建会让球不该出现地冒出来）。
+      // 顺序也决定了入场动画：隐藏态时 triggerFabPop 会主动跳过。
+      setNavDockExpanded(navDockExpanded);
+      triggerFabPop(freshFab);
       roundProgress = true;
     } finally {
       navDockBuilding = false;

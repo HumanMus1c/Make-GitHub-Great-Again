@@ -1,3 +1,205 @@
+v2026.9.23 [2026-09-23]
+按设置面板审计清单落地：关键词列表补 overscroll-behavior:contain（滚到底不再把滚动接力给外层内容区）；模板内联样式下沉样式表（关键词容器尺寸 + .button-row 的 margin-top，改 CSS 从此生效）；删除三条恒不适用的外部取色库适配（JS 分支 + CSS 规则）；.color-picker-row 统一 min-height:1.6em 修掉 1.39px 行节奏差；三颗对话框按钮换 Primer 语义色并补深色档（确认=primary / 取消=neutral / 重置=danger）；面板基准字号改 clamp(vmin) 自适应（2560×1440 下 280px ⇒ 359.88px，与悬浮球同步生长）；滚动条规则抽成公共段 immersiveScrollbarCss 供两个面板共用（导航 1 宿主 + 设置面板 2 宿主）
+[
+1. 需求（用户原话）：「尝试按照"Release 设置面板（.color-picker-dialog）现状审计可优化处清单"继续执行落地，
+   但是要求按照我曾规定的进行进度实时展示 progress.html 在右侧侧边栏。」另经一次拍板确认两处：范围 = §1 六项 +
+   §2.1/2.2（§2.4 抽面板外壳原语本轮不做）；§1.3 按钮配色 = 换 Primer 语义色 + 深色适配。进度看板
+   .workbuddy/progress.html（每 4 秒自动刷新，挂右侧预览面板，不入库）。
+2. §1.1 + §1.6（同一元素，顺序不能反）：#customKeywordsContainer 的 max-height / overflow-y /
+   margin-bottom 原本写在模板内联 style 里（内联优先级高于样式表 ⇒ 主题化、滚动条统一、响应式调整全都
+   「改了没反应」）⇒ 下沉到样式表。下沉之后它才是一个可被样式表描述的**独立滚动宿主**，§2.2 的滚动条规则
+   才有地方挂。再补 overscroll-behavior: contain（实测改前是 auto，而该容器**真的溢出**：内容 456px /
+   视窗 168–224px；同脚本里导航面板条目区用的是 contain，两处本来就不一致）。
+   **这里更正了审计文档的一处措辞**：原文写「接力给外层/页面」，实测页面那层根本轮不到 —— 祖先链是
+   kw → 内容区 → 页面，而内容区自带 contain、已在中间截断。单独压视口（1280×520，逼面板限高、内容区
+   必然溢出）量到的真承接者是**外层内容区**：scrollTop 0→7（改前）vs 0→0（改后），window.scrollY 两版
+   都是 0。⇒ 这条的价值是「看关键词列表时不把整个面板的内容区滑走」，不是「防整页乱滚」。
+3. §1.2：模板 <div class="button-row" style="margin-top: 1em;"> 与 CSS 的 margin-top: 0.75em 打架，
+   内联胜出 ⇒ 改 CSS 调间距一直无效。删内联后**把那个 1em 收进 CSS**（不是顺手改成 0.75em —— 那是需求外的
+   视觉改动），padding-top: 0.35em 保留 ⇒ 1.35em 与改前逐字一致（真机复测按钮行 gap 14px 未变）。
+4. §1.4：panel._pickr / _huebee / _spectrum 全文只被读取、从未赋值，window.Pickr / Huebee / $ 也没有任何
+   加载逻辑 ⇒ 三个 if 恒不执行；配套的 .pcr-app / .huebee / .sp-container 三条 CSS 同样永不生效。整段删除。
+   踩到一个**自己给自己挖的坑**：第一版把这些标识符写进了「已删除」的注释里 ⇒ grep 型检查仍旧命中，等于
+   死代码没删干净；改用中文描述后 11 个字面量全文 0 残留，闸门才能做「全文不含」这种强断言。保留
+   #libraries-container —— 名字像「库容器」，实际是内置取色器的挂载点，不是死代码。
+5. §1.5：行高由行内最高的子项决定（带颜色块的行走 .color-button = 0.8em 字号 × 2em ≈ 22.39px，不带色块的
+   行走 .color-toggle-btn = 0.8em × 1.8em ≈ 20.16px）⇒ 真机 22.39 / 22.39 / 22.39 / 21 / 21。给
+   .color-picker-row 加 min-height: 1.6em（正是颜色块那一档）⇒ 五行同高；刻意**不动按钮自身尺寸**
+   （那会牵动标题栏/悬浮球那套成对闸门），align-items: center 保证内容仍垂直居中。代价是面板总高 +2.78px。
+6. §1.3：确认 = primary（浅 #1f883d / 深 #238636）、取消 = neutral（浅 #f6f8fa / 深 #21262d）、
+   重置 = danger（浅 #cf222e / 深 #da3633），与脚本里「添加」按钮（#2da44e 绿）同属一套语义。两个细节：
+   ① 取消按钮的描边用 inset box-shadow 而非 border —— border 占盒模型，会让这颗按钮比另两颗高 2px
+   （上一轮刚把面板间距调准，不做几何位移；真机复测三颗都是 27.98px）；② 配色**只写在两个
+   prefers-color-scheme 块里**，写基座会盖住深色档（同权重时按源码顺序，而基座在前）。这也与对话框既有的
+   「主题走媒体查询」机制一致 —— 它不能引 GitHub 变量，否则出现浅色对话框 + 深色变量错配。
+7. §2.1：面板字号原是 --mgga-text-scale(1em) 定值 ⇒ 宽恒为 20em = 280px，而悬浮球上一轮已改成
+   clamp(38px, 4.4vmin, 56px) ⇒ 4K 全屏下球长到 56px、面板纹丝不动，两者脱节。新增
+   --mgga-panel-font: clamp(14px, calc(0.735vmin + 7.41px), 18px) 并让 .color-picker-dialog 用它；
+   面板内所有尺寸都是 em ⇒ **只改这一个字号**，宽度/行高/间距/滚动条随之同比缩放。取值刻意让
+   1280×896（vmin 896）落在 14px —— 与改前逐字相同，即「小屏观感零变化」，只在大屏上生长；1440p 及以上
+   封顶 18px（面板 360px）。真机：2560×1440 → 359.88px / 17.994px，悬浮球 56px，两者同步。
+8. §2.2：改前只有导航面板配了滚动条样式（10 余条手写规则，含 Firefox 的 @supports 兜底），设置面板一条都
+   没有 ⇒ 在「始终显示滚动条」的环境（或 Firefox）里两处观感打架。抽成模块级生成器
+   immersiveScrollbarCss(hosts, hoverHost)：导航 1 宿主 + 设置面板 2 宿主（内容区 / 关键词列表）。
+   **规则搬进生成器必须同步搬断言**：规则一变成运行时生成，旧闸门在 injectNavDockStyle 切片里就找不到那段
+   文本、直接假红；已改为「生成器里有没有 + 调用点传对宿主没有」，并加一条「切片内不得再出现手写
+   ::-webkit-scrollbar」守卫单一来源。
+9. 验证：离线 smoke **89/89 PASS**（新增 6 条：滚动条公共段 / §1.1+§1.6 / §1.2+§1.5 / §1.3 / §1.4 / §2.1）；
+   红绿对照（MGGA_SCRIPT=.workbuddy/probe/prev-before-settings-audit.js = fd2495c）：**82 PASS / 7 FAIL**，
+   7 条全是本次新改的判别器（分别点出：又出现手写 ::-webkit-scrollbar / 找不到公共段生成器 / 关键词容器又
+   写回内联样式 / 按钮行又写回内联 margin-top / 还留着旧按钮色 #007bff / 死代码残留 window.Pickr /
+   找不到 --mgga-panel-font 的 clamp 定义），既有 82 条一条没动。
+10. 真机（iina/iina，两支探针各喂前后两版脚本对跑）：
+    ① diag-settings-fix-verify.js → .workbuddy/probe/settings-fix-verify-{before,after}.json：
+       关键词列表 overscroll auto ⇒ contain；五条设置行行高 22.39×3 + 21×2 ⇒ 22.39×5；三颗按钮
+       #ff6b6b / #007bff / #ffa500 ⇒ #cf222e / #f6f8fa+inset / #1f883d（深色档 #da3633 / #21262d /
+       #238636），三颗高度逐位相同（27.98px）；面板 1280×896 下 280×589.53 ⇒ 280×592.31（行高统一
+       +2.78px）、2560×1440 下 280×589.53 ⇒ 359.88×749.53（字号 17.994px，球 56px）；滚动宿主
+       scrollbar-width 保持 auto（守住 Chromium 121+ 那个坑）；按钮行 gap 14px 未变。
+    ② diag-wheel-chain.js → .workbuddy/probe/wheel-{before,after}.json（只验 §1.1 的接力承接者，视口压到
+       1280×520 逼出内容区溢出 —— 1280×896 下内容区并不溢出，主探针**测不出**这条，别据此认为它无效）。
+    探针坑：主探针第一版把「滚轮接力」测试插在 1280 档之后，而它会清空关键词列表（塞占位条目让它溢出）
+    ⇒ 后面几档的面板高度差出 165px（≈关键词列表在 600 高视口下的 max-height: 168px），纯属自伤；已把该步
+    挪到所有测量之后 —— 破坏性步骤一律排在测量之后。
+11. 未验证：滚动条**观感**未肉眼确认 —— headless Chrome 用 overlay 滚动条（offsetWidth − clientWidth
+    恒为 0），根本不渲染经典滚动条与那对步进箭头 ⇒ 只能验到「声明同源 + 宿主正确 + 没写坏
+    scrollbar-width」，观感需在「始终显示滚动条」的 Windows 环境或 Firefox 下目视；深色档只验了配色、
+    未整体目视（hover 态、与面板边框的对比度）；§2.1 的系数只在两个端点取过证（1280→14px、1440p→18px），
+    中间档位（1920×1080 → 15.35px）是算的、没逐档目视，4K 下 359.88×749.53 是否显得笨重也只有客观值；
+    §1.1 只验了鼠标滚轮，触控板惯性滚动未单独验；Firefox / Safari、极窄视口（≤320px）、其它仓库未复测。
+12. 回滚点：tag snapshot-settings-panel-audit-20260923（commit fd2495c）。审计清单 §2.3（面板内 unicode
+    字形改 SVG）与 §2.4（抽「面板外壳」原语）本轮标注为不做。
+]
+v2026.9.23 [2026-09-23]
+设置面板关闭按钮改用导航栏那套 <button>✕（补 button 复位三件套）；标题栏 → 第一行设置项间距由 2px 修正为 0.75em 行间节奏；两枚悬浮球改用共享的 clamp(38px,4.4vmin,56px) 尺寸与 --mgga-fab-icon 图标尺寸（设置球 31.36px / 导航球写死 44px ⇒ 两处同值且自适应），设置球图标由 unicode ⚙️ 改为 SVG（齿轮路径上提为 FAB_GEAR_PATH 单一来源）；新增两台球共享的温和入场动画（480ms，只动 opacity/scale）；导航球移除导航项数量蓝色气泡，并修掉「面板重建后新球不带隐藏类」的旧 bug
+[
+1. 需求（用户原话）：「Release页的设置面板的标题栏的关闭按钮请使用仓库页的导航栏的关闭按钮样式；
+   标题栏和第一行 body > div.color-picker-dialog.visible > div.color-picker-content >
+   div:nth-child(1) 设置项安全距离不正常。并将设置面板的悬浮球的图标改为SVG，不再使用unicode，
+   并且做到与导航栏悬浮球一样跟随屏幕分辨率和比例自适应缩放尺寸，并保持同样大小。并增加共享的
+   悬浮球弹出动画，页面刷新时触发，动画要求要温和不剧烈。导航栏的悬浮球的图标去除导航项数量蓝色气泡。」
+   外加「再分析一下当前 Release 页设置面板有没有可优化处」。
+2. 真机改前 → 改后（iina/iina，本次新建三支探针，原始数据 .workbuddy/probe/{fab-gap,fab-pop,
+   settings-audit}.json）：关闭控件 SPAN× → BUTTON✕（hover 由 scale(1.1) 改为只换底色）；
+   分割线 → 第一行 2px → 10.5px；两球尺寸 31.36 / 44（写死）→ 39.42@1280×896、47.52@1920×1080
+   （两球逐位相同）；图标 unicode ⚙️ → SVG 16.16 / 19.47；蓝色气泡（原显示 15）已无；
+   标题栏可视区仍 37.8px 未变（关闭控件高度 20.8 未动 ⇒ 标题栏标准没被牵连）。
+3. 关闭按钮不是「抄 CSS」而是「换控件」：<button> 不继承页面字体、自带灰底与 2px 凹陷边框，
+   所以除尺寸四件套（14px / line-height 1.2 / padding 2px 6px / radius 6px）外还必须补
+   background: transparent、border: none、font-family: inherit。padding 刻意不动 —— 它同时是
+   「两处标题栏共用标准」的一部分，改它会重新拉开两个标题栏的高度。
+4. 第一行间距的真实来源：那 2px 不是内容区给的，是**标题栏自己的 margin-bottom**；而
+   .color-picker-row 没有自身 padding（实测 0/0）⇒ 第一行紧贴分割线，与它下面各行的
+   10.5px(0.75em) 不是一个节奏。修法写在**内容区**：padding: calc(0.75em - 2px) 0.35em 0 ——
+   用 calc 表达「补足差额」，谁动了标题栏的 margin 它就自动跟着补，同时不碰两处共用标准；
+   滚动时这段 padding 随内容滚出，与 GitHub 自身滚动区行为一致。
+5. 悬浮球同源：:root 新增 --mgga-fab-size: clamp(38px, 4.4vmin, 56px)（vmin 同时吃宽高
+   ⇒ 分辨率与比例都跟）与 --mgga-fab-icon: calc(var(--mgga-fab-size) * 0.41)（0.41 = 原来的
+   18/44）。两处 width/height、两处 > svg 都写同一变量；并显式补 box-sizing: border-box
+   （设置球是 div、导航球是 button，UA 对 button 默认 border-box，不写这句两球差 2px 边框）。
+6. 设置球图标改 SVG：齿轮路径原本只存在于 buildNavDockFallbackIcon 的 ICON_PATHS.gear，现上提为
+   模块级 FAB_GEAR_PATH 并让 ICON_PATHS.gear 引用它（与 GITHUB_MARK_PATH 同一套「路径只存一份」，
+   2323 字符的路径出现次数已断言为 1）。SVG 不写 width/height 属性，尺寸交给 --mgga-fab-icon。
+7. 入场动画（两台球共享一段 keyframes，页面刷新时各一次）：0%{scale:.9,opacity:0} →
+   60%{scale:1.015,opacity:1} → 100%{scale:1}，480ms。**只能动 opacity 与 scale**：导航球的
+   垂直居中靠 transform: translateY(-50%) !important，而 !important 在层叠里高于 CSS 动画
+   ⇒ 动画一碰 transform 就被整条忽略（表现为动画名生效、球纹丝不动）；scale 是个体变换属性，
+   与 transform 正交，缩放绕中心发生、居中不受影响。也不用 both/forwards 填充（终帧会永久接管
+   opacity，「展开时把球隐藏」就再也压不回去）。JS 侧 triggerFabPop 只在确实新建了一枚球时挂
+   class、animationend 摘掉、隐藏态跳过播；另加 prefers-reduced-motion 兜底。真机采样（挂钩装在
+   脚本注入之前，记录 class 出现那一刻）：0.9/0 → 0.988/0.767 → 结束回到 none/1，刷新后重跑同曲线。
+8. 蓝色气泡：徽标更新函数 + 2 处调用 + 整段 CSS 一并删除，smoke 新增「源码里再不许出现这两个
+   标识符」的闸门防只删一半。**顺带修掉一个旧 bug**：面板重建（SPA/视口变化）时旧实现只在菜单与
+   点击时同步展开态 ⇒ 面板开着时重建，新的悬浮球不会带隐藏类、会不该出现地冒出来；现在重建后
+   补一次 setNavDockExpanded(navDockExpanded)。
+9. 验证：离线 smoke 83/83 PASS；红绿对照（MGGA_SCRIPT=.workbuddy/probe/prev-before-fab-close.js
+   = 16f8e69）：77 PASS / 6 FAIL，6 条全是本次新增的判别器（分别点出 SPAN / 没有 svg / 气泡还在 /
+   缺 background: transparent / 不是 calc 形式 / 没有 --mgga-fab-size），既有 77 条一条没动。
+   真机几何与动画见第 2、7 条。
+10. 未验证：Firefox/Safari 未测（scale 属性 Chrome 104+/Firefox 72+/Safari 14.1+，更老的浏览器
+   只会「没有入场动画」，不影响功能）；深色主题未跑真机；动画「温和不剧烈」是主观项（客观只有
+   480ms 与峰值 scale 1.015）；极窄视口未复测；4K 全屏会顶到 56px 上限，未肉眼确认是否偏大。
+11. Release 设置面板的可优化处另出一份清单（docs/discussions/2026-09-23-settings-panel-audit.md，
+   真机三档视口体检）：优先项是关键词列表嵌套滚动的 overscroll 为 auto（会接力给页面，与导航
+   面板的 contain 不一致）、.button-row 的 margin-top 有 CSS 0.75em 与内联 1em 两份（改 CSS 无效）、
+   三条外部取色库适配分支恒不执行（_pickr/_huebee/_spectrum 全文无赋值）可删；另有面板宽度在
+   2560 宽下仍 280px、三颗按钮配色硬编码且无深色变体、滚动条风格与导航面板不一致（本机 overlay
+   滚动条量不到观感差异）等，均已列证据与取舍。
+12. 回滚点：tag snapshot-fab-and-close-20260923（commit 16f8e69）。
+]
+v2026.9.23 [2026-09-23]
+导航面板与 Release 设置面板的标题栏统一到导航栏那套标准（高度 52.09px ⇒ 29.8px 对齐），标题文本按标题栏宽度自适应缩小，导航栏标题栏补上设置面板的 GitHub 印记；追加修正：设置面板的**可视标题栏**（面板顶边 → 分割线）也统一到 37.8px
+[
+1. 需求（用户原话）：「将导航栏和 release 页的设置面板的标题栏统一一下，将高度改为导航栏的
+   标准，标题文本自适应缩小，在导航栏的标题栏基础上再补上 Release 页设置面板的
+   Github SVG icon 图标」。同时把 @version 由 2026.10.30 改为 2026.9.23。
+   注：2026.9.23 是**降版**且该号历史上用过（见下同号条目 [2026-09-18]）——
+   已装 2026.10.30 的用户不会自动收到本次更新；其余改动都不依赖这个字面量。
+2. 改前差距（真机实测，不是估的）：导航栏标题栏 29.8px / padding 2px 4px 6px /
+   margin-bottom 2px，设置面板 52.09px / padding 0 0 7px / margin-bottom 14px /
+   标题 17.5px bold。**高度差的真正来源不是 padding，而是最高的那个子项**：
+   标题栏高度 = max(子项高) + 上下 padding + 下边框，而设置面板的关闭按钮是
+   1.5em（24px）+ .3em 上下 padding ≈ 43px 高，比标题文本高出一大截 ——
+   只拉平 padding 而放着它不管，真机上两处仍然差 23px。
+3. 修复（两处逐项对齐到导航栏那套）：padding 2px 4px 6px、margin-bottom 2px、
+   border-bottom 1px solid、标题字号 13px、字重 600、标题色取 muted、关闭按钮统一为
+   14px / line-height 1.2 / padding 2px 6px。设置面板那条下边框用**主题无关**的中性灰
+   rgba(125,125,125,.25)：它的配色走 prefers-color-scheme 媒体查询，与导航栏的
+   --borderColor-muted（跟随 GitHub 主题）是两套体系，直接引用变量会出现
+   「浅色对话框 + 深色变量」的错配。
+4. 标题文本自适应缩小：标题栏加 container-type: inline-size，标题字号写成
+   「13px 兜底 + clamp(11px, 6.5cqi, 13px)」—— 兜底声明必须在 clamp 之前，因为 cqi
+   在旧浏览器里是非法单位、整条声明会被丢弃。6.5% 让内容宽 ≥200px 时都停在 13px：
+   两处标题栏常态下都在这条线以上（真统一），只有挤到 200px 以下才逐档下降，11px 封底。
+   图标宽高用 em，跟着标题一起缩（真机 14.16px → 12.7px → 12.09px）。省略号保留作最后
+   兜底（min-width:0 + overflow:hidden + ellipsis），缩到底仍放不下时退到截断，
+   绝不把关闭按钮挤出去。
+5. 导航栏补 GitHub 印记：顺手把这枚 16px octicon 收敛成单一来源 —— 它原先在设置面板里
+   内联了两份（buildSettingsDialogHTML 初始模板 + updateDialogColors 重绘），本次导航栏
+   又要接同一枚，三处各存一份必然改漏。改为 GITHUB_MARK_PATH 常量 + githubMarkSvg(em)，
+   三处调用。导航栏用 insertAdjacentHTML("afterbegin") 插在文字**之前**，所以
+   title.textContent 仍是纯 "MGGA"（静态闸门按 NAV_DOCK_BRAND 断言，无障碍名走面板的
+   aria-label，都不受影响）；同时补上 aria-hidden="true" focusable="false"
+   （改前设置面板那枚没有，真机实测 ariaHidden=null）。
+6. 验证（三层）：
+   ① 离线 smoke：76/76 PASS。新增「导航面板标题栏：补上设置面板的 GitHub 印记」
+      （印记是标题首个子节点 + viewBox 16 + aria-hidden + path 与 GITHUB_MARK_PATH
+      逐字符同源 + textContent 仍为 MGGA）、「版本号：导航面板角标取自 @version 单一来源」
+      （设置面板那一半在「打开设置面板」场景断言），以及源码闸门「两处标题栏：高度与字号
+      标准成对一致 + 标题字号按标题栏宽度自适应缩小」—— 两处 padding/margin-bottom/
+      border-bottom/container-type/字号兜底与 clamp 的先后/字重/ellipsis/关闭按钮尺寸
+      逐项对齐，印记路径全仓只 1 份、调用点恰好 3 处。
+   ② 离线红绿：新断言喂给修复前版本 ⇒ 共 76 项，PASS 74，FAIL 2
+      （缺 GitHub 印记 svg、设置面板缺高度标准）。既有 73 条一条没动。
+   ③ 真机几何（.workbuddy/probe/diag-titlebar-live.js，iina/iina，1280/320/200 三个视口）：
+      标题栏高度 29.8px vs 52.09px ⇒ **29.8px vs 29.8px**，且三个视口下都纹丝不动
+      （高度由关闭按钮决定，与标题字号解耦 ⇒ 自适应缩小不会把标题栏高度带跑）；
+      导航栏标题字号 12.87 → 11.56 → 11px（下限），印记同步缩到 12.09px，标题溢出恒 0；
+      设置面板 13px（320px 视口仍有余量，不该缩就不缩）→ 11px（200px 极窄视口）；
+      两处版本号都显示 v2026.9.23。
+      另外实测**排除**了一个推断风险：container-type 带来的尺寸包含会让标题栏不再参与面板的
+      width: fit-content，面板有塌到 min-width 的风险 —— 实测两版面板宽逐字相同
+      （1280px 下 220px、320px 下 199.8px），宽度始终由条目区决定，无回退。
+ 8. 追加修正（同版本号，不再改版本）：用户反馈「Release 页面设置面板的标题栏高度仍然和导航栏
+    标题不一致，并且没有在标题栏内垂直居中」。真机细粒度探针（.workbuddy/probe/diag-titlebar-fine.js）
+    量出真相 —— 两处 .header 的 border-box 高度**上一版就已经一样**（29.8px vs 29.8px），
+    差距在它**上方**：导航面板要 border 1px + padding 6px 才到标题栏顶边，而设置对话框自己
+    还有 padding 1.25em(17.5px)。用户眼里的“标题栏”是「面板顶边 → 分割线」这段可视区：
+    设置面板 49.3px vs 导航栏 37.8px，标题在这段里还偏下 6.25px —— 两个症状同一个根因。
+    修法：.color-picker-dialog 的 padding 由 1.25em 改为 6px 1.25em 1.25em（顶部与导航面板的
+    面板内边距一致；左/右/下保持 1.25em，内容区的呼吸不变）。
+    修后三项指标与导航栏逐字相同：顶边→标题栏顶边 7px、可视标题栏高 37.8px、
+    标题相对可视区中心 +0.5px（导航栏 +0.49px）；.header 仍为 29.8px。
+    一个刻意保留的取舍：标题栏的上下 padding 继续用导航栏那套 2px/6px，**不**改成对称的
+    4px/4px —— 眼睛判的是相对“可视区”中心的偏差，2/6 恰好把内容摆在可视区中心（+0.5px），
+    改成对称反而会让两处一起偏下 3.5px。
+ 9. 闸门补强：上一版的静态闸门只锁 .header 自己的声明，所以它对这次的差异**全绿** —— 这正是它
+    漏掉的原因。现新增一条锁**面板自身的顶部内边距**（两处必须相等且为 6px）。红绿可证：
+    新断言喂给修复前版本 = 76 PASS / 1 FAIL（失败信息直接点出 1.25em vs 6px）；修复后 77/77。
+    回滚点：tag snapshot-titlebar-vcenter-20260923（commit b5e4689）。
+7. 回滚点：tag snapshot-titlebar-unified-20260923（commit 32dd2cb）。
+]
+
 v2026.10.30 [2026-09-23]
 nav dock 标题栏移出滚动容器，滚动条只覆盖条目区、不再涵盖标题栏（真机实测宿主 39–213px vs 标题栏下沿 37px）
 [

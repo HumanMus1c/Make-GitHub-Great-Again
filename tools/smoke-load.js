@@ -545,12 +545,19 @@ async function run() {
   });
 
   if (settingsCmd) {
-    check("打开设置面板无异常", () => {
+    check("打开设置面板无异常（标题栏版本号取自 @version 单一来源）", () => {
       settingsCmd.fn();
       const dlg = relDoc.querySelector(".color-picker-dialog");
       assert(dlg, ".color-picker-dialog not created");
       assert(dlg.classList.contains("visible"), "dialog not marked visible");
-      return "版本号渲染: " + (dlg.querySelector(".color-picker-title").textContent.match(/v[\d.]+/) || ["?"])[0];
+      const t = dlg.querySelector(".color-picker-title");
+      assert(t, "设置面板标题缺失");
+      assert(
+        t.textContent.indexOf("v" + HEADER_VERSION) >= 0,
+        "设置面板标题里的版本号不是 @version(" + HEADER_VERSION + "): " +
+          JSON.stringify(t.textContent)
+      );
+      return "版本号渲染: v" + HEADER_VERSION;
     });
 
     check("面板控件齐备", () => {
@@ -561,6 +568,58 @@ async function run() {
         assert(relDoc.querySelector(sel), "missing " + sel);
       });
       return "12 个控件全部存在";
+    });
+
+    check("设置面板关闭控件：<button>✕ + 无障碍名（视觉与导航面板成对，见源码闸门）", () => {
+      const c = relDoc.querySelector(".color-picker-dialog .color-picker-close");
+      assert(c, "关闭控件缺失");
+      assert(
+        c.tagName === "BUTTON",
+        "关闭控件应是 <button>（与导航面板一致），实际 " + c.tagName
+      );
+      assert(
+        c.getAttribute("type") === "button",
+        "缺 type=button ⇒ 位于 form 内会被当成提交按钮"
+      );
+      assert(
+        c.textContent.trim() === "✕",
+        "字形应是 ✕（U+2715，与导航面板一致），实际 " + JSON.stringify(c.textContent)
+      );
+      assert(
+        (c.getAttribute("aria-label") || "").length > 0,
+        "关闭控件缺 aria-label"
+      );
+      return c.outerHTML;
+    });
+
+    check("设置面板悬浮球：图标改为 SVG（不再是 unicode），并挂上入场动画类", () => {
+      const fab = relDoc.getElementById("mgga-float-btn");
+      assert(fab, "#mgga-float-btn missing");
+      const svg = fab.querySelector(":scope > svg");
+      assert(svg, "悬浮球里没有 svg ⇒ 还在用 unicode 字形");
+      assert(
+        fab.textContent.trim() === "",
+        "悬浮球里仍有文字节点: " + JSON.stringify(fab.textContent)
+      );
+      assert(
+        fab.children.length === 1,
+        "悬浮球应只有图标一个子元素，实际 " + fab.children.length
+      );
+      assert(
+        svg.getAttribute("viewBox") === "0 0 16 16",
+        "图标 viewBox 不对: " + svg.getAttribute("viewBox")
+      );
+      const d = svg.querySelector("path") && svg.querySelector("path").getAttribute("d");
+      assert(d && d.length > 100, "齿轮 path 缺失或过短");
+      assert(
+        !svg.getAttribute("width") && !svg.getAttribute("height"),
+        "图标不该写死 width/height 属性 ⇒ 尺寸必须交给 CSS 的 --mgga-fab-icon"
+      );
+      assert(
+        fab.classList.contains("mgga-fab-pop"),
+        "新建的悬浮球没有挂入场动画类（页面刷新时应当各触发一次）"
+      );
+      return "svg viewBox 16 + path " + d.length + " 字符 + mgga-fab-pop";
     });
 
     check("关键词列表已渲染", () => {
@@ -743,6 +802,30 @@ async function run() {
     return "ok";
   });
 
+  check("导航悬浮球：蓝色数量气泡已移除，图标 svg 与入场动画类都在", () => {
+    const fab = homeDoc.getElementById("mgga-nav-dock-toggle");
+    assert(fab, "#mgga-nav-dock-toggle missing");
+    assert(
+      !fab.querySelector(".mgga-nav-dock-badge"),
+      "导航项数量蓝色气泡还在（用户已要求移除）"
+    );
+    assert(
+      fab.children.length === 1,
+      "悬浮球应只剩图标一个子元素（气泡移除后），实际 " + fab.children.length
+    );
+    const svg = fab.querySelector(":scope > svg");
+    assert(svg, "导航球图标 svg 缺失");
+    assert(
+      svg.getAttribute("viewBox") === "0 0 16 16",
+      "导航球图标 viewBox 不对: " + svg.getAttribute("viewBox")
+    );
+    assert(
+      fab.classList.contains("mgga-fab-pop"),
+      "新建的导航球没有挂入场动画类（页面刷新时应当各触发一次）"
+    );
+    return "无气泡 + svg viewBox 16 + mgga-fab-pop";
+  });
+
   check("悬浮导航面板已构建且含导航项", () => {
     const panel = homeDoc.getElementById("mgga-nav-dock");
     assert(panel, "nav dock panel missing");
@@ -799,6 +882,69 @@ async function run() {
       "aria-label 应保持可本地化文案，实际 = " + ariaLabel
     );
     return "标题 MGGA + 版本角标 + 关闭按钮 + aria-label 未受影响";
+  });
+
+  // ---------- 场景 3a-2: 导航面板标题栏补上 Release 设置面板的 GitHub 印记 ----------
+  // 用户诉求：「将导航栏和 release 页的设置面板的标题栏统一一下，将高度改为导航栏的
+  // 标准，标题文本自适应缩小，在导航栏的标题栏基础上再补上 Release 页设置面板的
+  // Github SVG icon 图标」。
+  // 这里只压得住「图标」与「标题文本没被污染」两部分；高度与字号标准是声明层面的，
+  // jsdom 量不出像素 ⇒ 交给下面的源码级闸门（两处声明逐项对齐），真机几何另算。
+  check("导航面板标题栏：补上设置面板的 GitHub 印记，标题文本仍为 MGGA", () => {
+    const panel = homeDoc.getElementById("mgga-nav-dock");
+    const title = panel.querySelector(
+      ":scope > .mgga-nav-dock-header > .mgga-nav-dock-header-title"
+    );
+    assert(title, "header title missing");
+    const svg = title.querySelector(":scope > svg");
+    assert(svg, "标题栏缺少 GitHub 印记 svg（本次新增）");
+    assert(
+      title.firstElementChild === svg,
+      "印记不是标题栏首个子节点 ⇒ 图标跑到文字后面去了"
+    );
+    assert(
+      svg.getAttribute("viewBox") === "0 0 16 16",
+      "印记 viewBox 不对: " + svg.getAttribute("viewBox")
+    );
+    assert(
+      svg.getAttribute("aria-hidden") === "true",
+      "装饰性印记必须 aria-hidden，否则读屏会把它念成内容"
+    );
+    const path = svg.querySelector("path");
+    assert(path && path.getAttribute("d"), "印记缺少 path");
+
+    // 单一来源：面板里的 d 必须与源码里那份 GITHUB_MARK_PATH 逐字符相同
+    const raw = fs.readFileSync(SCRIPT, "utf8");
+    const m = raw.match(/const GITHUB_MARK_PATH\s*=\s*\r?\n?\s*"([^"]+)"/);
+    assert(m, "源码里找不到 GITHUB_MARK_PATH 单一来源");
+    assert(
+      path.getAttribute("d") === m[1],
+      "导航栏印记与 GITHUB_MARK_PATH 不是同一份路径 ⇒ 又出现两份各改各的"
+    );
+    assert(
+      title.textContent.trim() === "MGGA",
+      "加了图标后标题文本被污染: " + JSON.stringify(title.textContent)
+    );
+    return "印记 viewBox 16 + aria-hidden + 与 GITHUB_MARK_PATH 同源，标题文本仍为 MGGA";
+  });
+
+  // 版本号单一来源（本次把 @version 改成 2026.9.23）：导航面板与设置面板都得从
+  // @version（GM_info）取值，两处都不许写死 —— 写死的地方会在下次改版本号时静默过期。
+  // 设置面板那一半在「打开设置面板」场景里断言（对话框那时还在 DOM 里，随后就被关了）。
+  check("版本号：导航面板角标取自 @version 单一来源", () => {
+    assert(
+      /^\d{4}\.\d{1,2}\.\d{1,2}$/.test(HEADER_VERSION),
+      "@version 不是日期式版本号: " + HEADER_VERSION
+    );
+    const panel = homeDoc.getElementById("mgga-nav-dock");
+    const ver = panel.querySelector(".mgga-nav-dock-header-version");
+    assert(ver, "导航面板缺少版本角标");
+    assert(
+      ver.textContent === "v" + HEADER_VERSION,
+      "导航面板版本角标 = " + JSON.stringify(ver.textContent) +
+        "，应为 v" + HEADER_VERSION
+    );
+    return "导航面板版本角标 = v" + HEADER_VERSION;
   });
 
   // ---------- 场景 3b: 溢出项免点击收割（2026-09-21 免点击改造回归） ----------
@@ -1302,10 +1448,11 @@ async function run() {
     return "caption 0 处，标题 = NAV_DOCK_BRAND，aria-label 保留";
   });
 
-  // ---------- 静态回归闸：滚动条只覆盖条目区（不含标题栏）----------
-  // 用户诉求两条，是演进关系：
+  // ---------- 静态回归闸：沉浸式滚动条（公共段）+ 只覆盖条目区 ----------
+  // 三条诉求是演进关系：
   //   ① 「滚动条再沉浸一些，起码不再显示上下顶端的步进箭头」；
-  //   ② 「滚动条应该排除标题栏区域，不再涵盖标题栏」。
+  //   ② 「滚动条应该排除标题栏区域，不再涵盖标题栏」；
+  //   ③ 本轮（审计 §2.2）：设置面板的滚动条与导航面板风格不一致 ⇒ 两处同源。
   // ① 箭头是 Windows 经典滚动条里 `::-webkit-scrollbar-button` 渲染出来的伪元素，
   //    必须显式 display:none。附带锁死一个**极易踩的坑**：Chromium 121+ 里只要
   //    基座规则出现 `scrollbar-width`（非 auto），整组 `::-webkit-scrollbar` 规则
@@ -1314,27 +1461,24 @@ async function run() {
   // ② 滚动条要「止于标题栏下沿」，只能靠**结构**：滚动条由滚动容器绘制，必然覆盖
   //    容器全高，而 webkit 伪元素没有「从第 N px 开始」的能力。于是把标题栏移出
   //    滚动容器：面板只做 flex 列布局 + overflow:hidden，滚动口下沉为
-  //    `.mgga-nav-dock-body`，滚动条伪元素也一并挂到它身上。
-  // jsdom 无排版层 ⇒ 这条只锁源码声明，真实几何交给真机场景 7.5。
-  check("导航面板滚动条：只覆盖条目区 + 无步进箭头 + 基座无 scrollbar-width", () => {
+  //    `.mgga-nav-dock-body`。
+  // ③ 规则改为**运行时由 immersiveScrollbarCss() 生成**，两个面板共用一份 ⇒ 断言从
+  //    "源码里有没有这段 CSS"改成"生成器里有没有 + 调用点传对宿主没有"。
+  //    ⚠️ 这正是本轮最容易漏的地方：规则一搬进生成器，旧断言会在切片里找不到那段
+  //    文本、直接假红 —— 搬规则必须同步搬断言。
+  // jsdom 无排版层 ⇒ 只锁声明，真实几何交给真机场景 7.5。
+  check("导航面板滚动条：只覆盖条目区（规则全部来自公共段，切片内零手写）", () => {
     const raw = fs.readFileSync(SCRIPT, "utf8");
     const i = raw.indexOf("function injectNavDockStyle(");
     assert(i > 0, "injectNavDockStyle not found");
     const css = raw.slice(i, raw.indexOf("function removeNavDock("));
 
+    // ① 规则已整体搬进公共段生成器（immersiveScrollbarCss），本切片里应当**一条都不剩**。
+    //    这条同时是"单一来源"的守卫：谁再往导航面板样式里补一条手写滚动条规则，这里就红。
+    //    （生成器本身的断言、以及两处调用点的断言，见后面那个 check。）
     assert(
-      /::-webkit-scrollbar-button[\s\S]*?\{\s*display:\s*none\s*!important/.test(css),
-      "滚动条按钮（步进箭头）未被 display:none 干掉"
-    );
-
-    // ① 滚动条必须挂在滚动区 body 上，面板自身不得再是滚动条宿主
-    assert(
-      /#mgga-nav-dock\s+\.mgga-nav-dock-body::-webkit-scrollbar[a-z-]*\s*[,{]/.test(css),
-      "webkit 滚动条规则没挂到 .mgga-nav-dock-body 上 ⇒ 滚动条仍由面板绘制"
-    );
-    assert(
-      !/#mgga-nav-dock::-webkit-scrollbar[a-z-]*\s*[,{]/.test(css),
-      "源码里仍有挂在面板自身上的 ::-webkit-scrollbar ⇒ 滚动条会贯穿标题栏"
+      !/::-webkit-scrollbar/.test(css),
+      "导航面板样式里又出现手写的 ::-webkit-scrollbar 规则 ⇒ 应改用公共段 immersiveScrollbarCss"
     );
 
     const baseStart = css.search(/#mgga-nav-dock\s*\{/);
@@ -1380,13 +1524,197 @@ async function run() {
       "标题栏缺 flex-shrink:0 ⇒ 面板压短时它会被压缩、滚动条又爬上来"
     );
 
-    const ff = css.indexOf("@supports (-moz-appearance: none)");
-    assert(ff > 0, "缺少 Firefox 专属 scrollbar-width 兜底块");
+    // @supports 的 Firefox 兜底块随规则一起进了公共段 ⇒ 它的断言移到了"公共段"那个
+    // check 里；留在这里会假红（切片里已经没有那段文本了）。
+    return "面板 overflow:hidden + 滚动区唯一且能自约束 + 标题栏不可压缩；滚动条规则零手写";
+  });
+
+  // ---------- 静态回归闸：滚动条规则单一来源（审计 §2.2）----------
+  // 改前只有导航面板配了滚动条样式（10 来条手写规则），设置面板一条都没有 ⇒ 在
+  // "系统/浏览器始终显示滚动条"的环境（或 Firefox）里，一个细淡条、一个带上下
+  // 箭头的经典粗条，两处观感打架。现在规则抽进 immersiveScrollbarCss()，两处只是
+  // 换宿主选择器 —— 这里的断言就是"单一来源"的守卫：生成器只有一份、调用点传对宿主。
+  check("沉浸式滚动条：单一来源的公共段，两个面板共用（含设置面板两个宿主）", () => {
+    const raw = fs.readFileSync(SCRIPT, "utf8");
+    const gi = raw.indexOf("function immersiveScrollbarCss(");
+    assert(gi > 0, "找不到公共段生成器 immersiveScrollbarCss");
+    const gen = raw.slice(gi, raw.indexOf("// 添加CSS样式 - 对话框样式（固定不变）"));
     assert(
-      /scrollbar-width:\s*thin/.test(css.slice(ff)),
-      "Firefox 兜底块里没有 scrollbar-width:thin"
+      gen.length > 300 && gen.indexOf("@supports (-moz-appearance: none)") > 0,
+      "生成器切片异常（取不到完整规则）"
     );
-    return "滚动条只挂滚动区、箭头已禁、基座无 scrollbar-width、overscroll 隔离就位";
+
+    // ① 步进箭头必须显式干掉（否则 Windows 经典滚动条那对箭头会回来）
+    assert(
+      /::-webkit-scrollbar-button[\s\S]*?\{\s*display:\s*none\s*!important/.test(gen),
+      "公共段没有关掉滚动条步进箭头"
+    );
+
+    // ② 基座不得出现 scrollbar-width 声明：Chromium 121+ 里只要它非 auto，该元素上
+    //    整组 ::-webkit-scrollbar 规则会被直接忽略（箭头复活、不报错）。
+    //    用**带冒号的声明**计数，避免被注释里提到的同名标识符带偏。
+    const swHits = gen.match(/scrollbar-width\s*:/g) || [];
+    assert(
+      swHits.length === 1,
+      "公共段里 scrollbar-width 声明应恰好 1 条（只许在 @supports 内），实际 " + swHits.length
+    );
+    assert(
+      gen.indexOf("scrollbar-width:") > gen.indexOf("@supports (-moz-appearance: none)"),
+      "scrollbar-width 跑到了 @supports 之外 ⇒ Chromium 会忽略整组 webkit 规则、箭头复活"
+    );
+    assert(/scrollbar-color\s*:/.test(gen), "Firefox 兜底块里缺 scrollbar-color");
+
+    // ③ 两处面板都要接上公共段；设置面板有**两个**滚动宿主（内容区 + 关键词列表）
+    assert(
+      /immersiveScrollbarCss\(\[\s*"#mgga-nav-dock \.mgga-nav-dock-body"\s*\]/.test(raw),
+      "导航面板没有接公共段（或宿主选择器不再是条目区）"
+    );
+    assert(
+      raw.indexOf('".color-picker-dialog .color-picker-content"') > 0 &&
+        raw.indexOf('".color-picker-dialog #customKeywordsContainer"') > 0,
+      "设置面板的滚动宿主没接全（内容区 / 关键词列表 至少缺一个）⇒ 两处观感又会打架"
+    );
+
+    // ④ 生成器只许一份 —— 谁想"只给设置面板调一调"而复制一份，这里立刻红
+    assert(
+      (raw.match(/function immersiveScrollbarCss\(/g) || []).length === 1,
+      "immersiveScrollbarCss 被定义了多份 ⇒ 公共段不再是单一来源"
+    );
+    return "1 份生成器 / 导航 1 宿主 + 设置面板 2 宿主；箭头已禁、基座无 scrollbar-width";
+  });
+
+  // ---------- 静态回归闸：设置面板审计清单落地 ----------
+  // 清单来源 docs/discussions/2026-09-23-settings-panel-audit.md（§1 低风险六项 +
+  // §2.1/2.2）。这些改动**全是声明层面的**（jsdom 没有排版层，量不出行高/宽度/观感），
+  // 所以逐条锁源码；每条注明清单编号，便于回溯到审计文档。
+  // 注意：断言用"取规则体"而不是"全文 contains" —— 对话框的 prefers-color-scheme
+  // 覆盖块里会出现同名选择器，取规则体一律用 lastIndexOf（基座规则在后）。
+  check("设置面板 §1.1/§1.6：关键词容器的尺寸在样式表里，且不把滚动接力给页面", () => {
+    const raw = fs.readFileSync(SCRIPT, "utf8");
+
+    // §1.6：模板里不得再有内联尺寸（内联优先级高于 CSS ⇒ 改了没反应的陷阱会复发）
+    assert(
+      !/id="customKeywordsContainer"\s+style=/.test(raw),
+      "关键词容器又写回内联样式 ⇒ 尺寸/主题/滚动条调整会被内联覆盖（§1.6 复发）"
+    );
+
+    const i = raw.lastIndexOf("#customKeywordsContainer {");
+    assert(i > 0, "找不到 #customKeywordsContainer 规则");
+    const body = raw.slice(i, raw.indexOf("}", i));
+    assert(
+      body.indexOf("max-height: min(16em, 28vh)") >= 0,
+      "关键词容器的 max-height 丢失（应从模板内联下沉到这条规则里）"
+    );
+    assert(/overflow-y:\s*auto/.test(body), "关键词容器不再是滚动宿主（overflow-y:auto 丢失）");
+    // §1.1：改前实测 overscroll-behavior 是 auto，而该容器真的溢出（456px 内容 /
+    // 168–224px 视窗）⇒ 鼠标停在里面滚到底，滚动会继续传给外层内容区、再传给整页。
+    assert(
+      /overscroll-behavior:\s*contain/.test(body),
+      "关键词容器未隔离滚动接力（§1.1：内容滚到底会把滚动传给整页）"
+    );
+    return "内联已清空；max-height / overflow-y / overscroll 全在样式表";
+  });
+
+  check("设置面板 §1.2/§1.5：按钮行间距单一来源 + 六行节奏统一", () => {
+    const raw = fs.readFileSync(SCRIPT, "utf8");
+
+    // §1.2：模板内联的 margin-top 必须删掉（它压在 CSS 上面，让"改 CSS 没反应"）
+    assert(
+      !/class="button-row"\s+style=/.test(raw),
+      "按钮行又写回内联 margin-top ⇒ 改 CSS 依然没反应（§1.2 复发）"
+    );
+    const br = raw.lastIndexOf(".button-row {");
+    assert(br > 0, "找不到 .button-row 规则");
+    const brBody = raw.slice(br, raw.indexOf("}", br));
+    assert(
+      /margin-top:\s*1em/.test(brBody),
+      ".button-row 的 margin-top 不是 1em ⇒ 与"+"删内联前的视觉不再一致（等于顺手改了间距）"
+    );
+
+    // §1.5：行高下限取颜色块那一档（0.8em 字号 × 2em = 1.6em）；
+    // 不写它的话后两行 21px、前三行 22.39px，差 1.39px。
+    const rw = raw.lastIndexOf(".color-picker-row {");
+    assert(rw > 0, "找不到 .color-picker-row 规则");
+    const rwBody = raw.slice(rw, raw.indexOf("}", rw));
+    assert(
+      /min-height:\s*1\.6em/.test(rwBody),
+      "行节奏未统一（§1.5：缺 min-height:1.6em，后两行会比前三行矮 1.39px）"
+    );
+    return "按钮行间距只在 CSS（1em + padding 0.35em）；六行同高";
+  });
+
+  check("设置面板 §1.3：三颗按钮走 Primer 语义色，深浅两档齐全", () => {
+    const raw = fs.readFileSync(SCRIPT, "utf8");
+
+    // 旧色必须绝迹（注释里也不留 —— 否则以后 grep 排查会被注释误导）
+    ["#007bff", "#ffa500", "#ff6b6b", "#0069d9", "#e69500", "#ff5252"].forEach((c) => {
+      assert(raw.indexOf(c) < 0, "还留着旧按钮色 " + c + "（§1.3 未清干净）");
+    });
+
+    const li = raw.indexOf("@media (prefers-color-scheme: light)");
+    const di = raw.indexOf("@media (prefers-color-scheme: dark)", li);
+    assert(li > 0 && di > li, "找不到对话框的浅色/深色媒体查询块");
+    const light = raw.slice(li, di);
+    // 深色块后面还跟着别的媒体查询，取一段足够长的切片即可（断言都是"必须包含"式）
+    const dark = raw.slice(di, di + 4000);
+
+    // 浅色档：确认 = primary 绿 / 重置 = danger 红
+    assert(light.indexOf("#1f883d") > 0, "浅色档缺 primary 绿（确认按钮）");
+    assert(light.indexOf("#cf222e") > 0, "浅色档缺 danger 红（重置按钮）");
+    // 深色档：同一批颜色直接搬过去会刺眼，必须各换一档
+    assert(dark.indexOf("#238636") > 0, "深色档缺 primary（§1.3 要的就是"+"补深色变体"+"）");
+    assert(dark.indexOf("#da3633") > 0, "深色档缺 danger");
+    assert(
+      dark.indexOf("#21262d") > 0,
+      "深色档缺 neutral 底色（取消按钮）"
+    );
+
+    // 取消按钮用 inset 描边而非 border —— 不占盒模型，三颗按钮高度不变
+    const cb = raw.lastIndexOf(".cancel-button {");
+    assert(cb > 0, "找不到 .cancel-button 规则");
+    assert(
+      /box-shadow:\s*inset 0 0 0 1px/.test(raw.slice(cb, raw.indexOf("}", cb))),
+      "取消按钮的描边不再是 inset box-shadow ⇒ 会占盒模型、三颗按钮高度不再一致"
+    );
+    return "确认=primary / 取消=neutral / 重置=danger，深浅两档齐全且旧色绝迹";
+  });
+
+  check("设置面板 §1.4：外部取色库适配是死代码，已整段删除", () => {
+    const raw = fs.readFileSync(SCRIPT, "utf8");
+    [
+      "window.Pickr",
+      "window.Huebee",
+      "panel._pickr",
+      "panel._huebee",
+      "panel._spectrum",
+      ".pcr-app",
+      ".huebee",
+      ".sp-container",
+    ].forEach((t) => {
+      assert(raw.indexOf(t) < 0, "死代码残留：" + t + "（§1.4）");
+    });
+    assert(raw.indexOf("initializeLibraries") > 0, "内置取色器实现被误删 ⇒ 取色功能没了");
+    return "三个库的同步分支与三条样式规则均无残留，内置取色器仍在";
+  });
+
+  check("设置面板 §2.1：面板基准字号随视口自适应（与悬浮球同源吃 vmin）", () => {
+    const raw = fs.readFileSync(SCRIPT, "utf8");
+    const v = /--mgga-panel-font:\s*clamp\(([^)]*\)[^)]*)\)/.exec(raw) || /--mgga-panel-font:\s*clamp\(([\s\S]*?)\);/.exec(raw);
+    assert(v, "找不到 --mgga-panel-font 的 clamp 定义");
+    assert(/vmin/.test(v[1]), "面板字号没用 vmin ⇒ 宽屏上不会跟着悬浮球一起长（§2.1 未解决）");
+
+    const dlg = raw.indexOf(".color-picker-dialog {");
+    assert(dlg > 0, "找不到 .color-picker-dialog 基座规则");
+    const dlgBody = raw.slice(dlg, raw.indexOf("}", dlg));
+    assert(
+      /font-size:\s*var\(--mgga-panel-font\)/.test(dlgBody),
+      "面板字号没接 --mgga-panel-font（宽度/行高/间距就不会跟着缩放）"
+    );
+    assert(
+      raw.indexOf("var(--mgga-text-scale)") < 0,
+      "旧的定值字号 --mgga-text-scale 仍在被引用 ⇒ 面板宽仍是死值 280px"
+    );
+    return "面板字号 = clamp(vmin) 自适应，宽度/行高/间距随之同比缩放";
   });
 
   // ---------- 静态回归闸：标题栏必须在滚动容器之外 ----------
@@ -1429,6 +1757,369 @@ async function run() {
       "标题栏又改回 position:sticky ⇒ 说明它重新落进了滚动容器"
     );
     return "标题栏在滚动容器外；sticky/背景/z-index/补边 已随结构隔离一并移除";
+  });
+
+  // ---------- 静态回归闸：两处标题栏共用同一套标准 ----------
+  // 用户诉求：「将导航栏和 release 页的设置面板的标题栏统一一下，将高度改为导航栏的
+  // 标准，标题文本自适应缩小」。三件事都落在**声明层面**，而 jsdom 没有排版层
+  // （clientHeight/scrollWidth 恒 0）⇒ 量不出"高度统一了没有""字缩了没有"。
+  // 因此这里在源码字符串上逐项锁死：两处标题栏的 高度标准 / 下边框 / 字重 / 字号
+  // 兜底 + 容器查询 clamp 必须成对一致 —— 只要有人只改一处，闸门立刻红。
+  check("两处标题栏：高度与字号标准成对一致 + 标题字号按标题栏宽度自适应缩小", () => {
+    const raw = fs.readFileSync(SCRIPT, "utf8");
+
+    // 注意取 **lastIndexOf**：对话框的主题覆盖块（prefers-color-scheme 媒体查询）
+    // 在前、基座规则在后，同名选择器出现多次 —— 要锁的是最后那条基座规则。
+    const dh = raw.lastIndexOf(".color-picker-header {");
+    assert(dh > 0, "找不到 .color-picker-header 规则（设置面板标题栏）");
+    const dialogHeader = raw.slice(dh, raw.indexOf("}", dh));
+    const nh = raw.indexOf("#mgga-nav-dock .mgga-nav-dock-header {");
+    assert(nh > 0, "找不到 #mgga-nav-dock .mgga-nav-dock-header 规则");
+    const navHeader = raw.slice(nh, raw.indexOf("}", nh));
+
+    // ① 高度标准：导航栏那套 padding 2px 4px 6px + margin-bottom 2px；
+    //    原来的设置面板是 margin-bottom 1em + padding-bottom 0.5em，高出一大截。
+    ["padding: 2px 4px 6px", "margin-bottom: 2px", "border-bottom: 1px solid"].forEach(
+      (decl) => {
+        assert(
+          dialogHeader.indexOf(decl) >= 0,
+          "设置面板标题栏缺高度标准「" + decl + "」⇒ 两处高度又不一样了"
+        );
+        assert(
+          navHeader.indexOf(decl) >= 0,
+          "导航栏标题栏缺高度标准「" + decl + "」⇒ 标准本身被改坏了"
+        );
+      }
+    );
+    assert(
+      dialogHeader.indexOf("justify-content: space-between") >= 0 &&
+        navHeader.indexOf("justify-content: flex-start") >= 0,
+      "两处标题栏的左右排布应保持「标题靠左、关闭靠右」"
+    );
+
+    // ② 尺寸容器 + 自适应缩小：两处标题栏都必须成为 container，否则 cqi 无参照系、
+    //    clamp 会整条失效退化回兜底值（浏览器不报错，只是不再自适应）。
+    //    字号声明必须「先静态兜底、后 clamp」—— 顺序反了，不认 cqi 的浏览器就没了兜底。
+    [
+      { sel: ".color-picker-header {", name: "设置面板" },
+      { sel: "#mgga-nav-dock .mgga-nav-dock-header {", name: "导航栏" },
+    ].forEach((c) => {
+      const i = raw.indexOf(c.sel);
+      const body = raw.slice(i, raw.indexOf("}", i));
+      assert(
+        body.indexOf("container-type: inline-size") >= 0,
+        c.name + "标题栏没有 container-type: inline-size ⇒ 标题字号无法按宽度自适应"
+      );
+    });
+    [
+      { sel: ".color-picker-title {", name: "设置面板", last: true },
+      { sel: "#mgga-nav-dock .mgga-nav-dock-header-title {", name: "导航栏" },
+    ].forEach((c) => {
+      const i = c.last ? raw.lastIndexOf(c.sel) : raw.indexOf(c.sel);
+      assert(i > 0, "找不到 " + c.sel);
+      const body = raw.slice(i, raw.indexOf("}", i));
+      const fb = body.indexOf("font-size: 13px");
+      const cl = body.indexOf("font-size: clamp(");
+      assert(
+        fb >= 0 && cl > fb,
+        c.name + "标题缺「13px 静态兜底 + clamp 自适应」的成对声明（兜底必须在前）"
+      );
+      assert(
+        /font-size:\s*clamp\(\s*11px\s*,\s*[\d.]+cqi\s*,\s*13px\s*\)/.test(body),
+        c.name + "标题的 clamp 形状不对（应为 11px 下限 / cqi 中值 / 13px 上限）"
+      );
+      assert(
+        body.indexOf("font-weight: 600") >= 0,
+        c.name + "标题字重不是 600 ⇒ 两处标题栏仍不一致"
+      );
+      assert(
+        body.indexOf("text-overflow: ellipsis") >= 0,
+        c.name + "标题少了 ellipsis 兜底 ⇒ 极窄时会把关闭按钮挤出去"
+      );
+    });
+
+    // ④ 关闭按钮也是"标题栏高度"的一部分：标题栏高度 = 最高的子项 + padding。
+    //    只拉平 padding 而放着关闭按钮不管，真机上两处仍差 23px
+    //    （实测：设置面板 53.09px vs 导航栏 29.8px，罪魁就是 1.5em + .3em/.6em 的 × ）。
+    [
+      { sel: ".color-picker-close {", name: "设置面板", last: true },
+      { sel: "#mgga-nav-dock .mgga-nav-dock-close {", name: "导航栏" },
+    ].forEach((c) => {
+      const i = c.last ? raw.lastIndexOf(c.sel) : raw.indexOf(c.sel);
+      assert(i > 0, "找不到 " + c.sel);
+      const body = raw.slice(i, raw.indexOf("}", i));
+      ["font-size: 14px", "line-height: 1.2", "padding: 2px 6px"].forEach((decl) => {
+        assert(
+          body.indexOf(decl) >= 0,
+          c.name + "关闭按钮缺「" + decl + "」⇒ 标题栏高度仍会由它决定，两处对不齐"
+        );
+      });
+    });
+
+    // ③ 图标单一来源：路径只能有一份（原来在设置面板里内联了两份），
+    //    调用点三处 —— 设置面板初始模板 / 设置面板重绘 / 导航面板标题栏。
+    const markCount = raw.split("M8 0c4.42").length - 1;
+    assert(
+      markCount === 1,
+      "GitHub 印记路径出现 " + markCount + " 次 ⇒ 又出现多份各改各的"
+    );
+    const callCount = (raw.match(/githubMarkSvg\("/g) || []).length;
+    assert(
+      callCount === 3,
+      "githubMarkSvg(...) 调用点应为 3 处（设置面板 ×2 + 导航栏 ×1），实际 " + callCount
+    );
+    return "两处标题栏 高度/边框/字重/clamp 逐项一致，印记路径单一来源（1 份路径 / 3 处调用）";
+  });
+
+  // ---------- 静态回归闸：两处标题栏"面板顶边 → 分割线"这段可视高度成对 ----------
+  // 用户第二次反馈：「Release 页面设置面板的标题栏高度仍然和导航栏标题不一致，
+  // 并且没有在标题栏内垂直居中」。真机量到的真相不是 .header —— 它的 border-box 高度
+  // **上一版就已经一样了**（29.8px vs 29.8px）。差距在它**上方**：导航面板
+  // border 1px + padding 6px 才到标题栏顶边，而设置对话框自己还有 padding 1.25em(17.5px)，
+  // 于是「面板顶边 → 分割线」是 49.3px vs 37.8px，标题这段里还偏下 6.25px。
+  // ⇒ 闸门必须连**面板自己的顶部内边距**一起锁；只锁 .header 的声明是锁不住的
+  //   （上一版就是这样漏掉的：断言全绿，真机仍然不一致）。
+  // 注意：断言的是"两处相等且 = 6px"，不是"某个字面量"—— 谁把两处一起改成别的值，
+  // 可视标题栏高度就会一起变，这里会红，提示那是需要重新真机取证的决定。
+  check("两处标题栏：面板顶边 → 标题栏顶边 同为「1px 边框 + 6px 内边距」", () => {
+    const raw = fs.readFileSync(SCRIPT, "utf8");
+    const topPadOf = (sel, mustHave) => {
+      const i = raw.indexOf(sel);
+      assert(i > 0, "找不到 " + sel + " 规则");
+      const body = raw.slice(i, raw.indexOf("}", i));
+      assert(
+        body.indexOf(mustHave) >= 0,
+        sel + " 取到的不是基座规则（缺「" + mustHave + "」）⇒ 断言会锁错地方"
+      );
+      const m = /padding:\s*([^;]+);/.exec(body);
+      assert(m, sel + " 没有 padding 声明 ⇒ 面板顶边到标题栏顶边的距离不可控");
+      return m[1].replace(/!important/, "").trim().split(/\s+/)[0];
+    };
+    const dialogTop = topPadOf(".color-picker-dialog {", "position: fixed");
+    const navTop = topPadOf("#mgga-nav-dock {", "position: fixed");
+    assert(
+      dialogTop === navTop,
+      "两处面板的顶部内边距不一致（设置面板 " +
+        dialogTop +
+        " vs 导航面板 " +
+        navTop +
+        "）⇒「面板顶边 → 分割线」这段可视标题栏仍会差一截、标题也不在中间"
+    );
+    assert(
+      dialogTop === "6px",
+      "顶部内边距应为 6px（与导航面板一致），实际 " + dialogTop
+    );
+    return (
+      "两处面板顶部内边距同为 " + dialogTop +
+      " ⇒ 可视标题栏 = border 1px + " + dialogTop + " + .header(29.8px)"
+    );
+  });
+
+  // ---------- 静态回归闸：两处关闭控件共用一套 button 样式 ----------
+  // 用户 2026-09-23：「Release 页的设置面板的标题栏的关闭按钮请使用仓库页的导航栏的
+  // 关闭按钮样式」。改前设置面板是 <span class="color-picker-close">&times;</span>：
+  // 字形是**乘号**（×，U+00D7）而非叉号（✕，U+2715），hover 还会 transform: scale(1.1)
+  // 把它放大；导航面板是 <button>✕</button>，hover 只换底色。
+  // 这些都在模板字符串/声明层面，jsdom 量不出观感 ⇒ 逐条锁死（含"只改一半"的检查：
+  // 只把 <span> 换成 <button> 而忘了复位 background/border/font-family，真机上会
+  // 露出一圈系统按钮的灰底与凹陷边框）。
+  check("两处关闭控件：同一套 button 样式（字形 / 复位 / hover 不放大）", () => {
+    const raw = fs.readFileSync(SCRIPT, "utf8");
+    // 同名选择器在多个规则里出现（浅/深色主题各一条 hover）⇒ 取全部规则体逐个判
+    const rules = (sel) => {
+      const out = [];
+      let i = -1;
+      while ((i = raw.indexOf(sel, i + 1)) >= 0) {
+        out.push(raw.slice(i + sel.length, raw.indexOf("}", i)));
+      }
+      assert(out.length > 0, "找不到规则 " + sel);
+      return out;
+    };
+    // 注意取**最后一条**：浅/深色主题那两条（只写 color）在前面，基座规则在最后
+    // —— 与上面"两处标题栏"那条闸门同一个坑（取错规则会得出相反的结论）。
+    const dialog = rules(".color-picker-close {").pop();
+    const nav = rules("#mgga-nav-dock .mgga-nav-dock-close {")[0];
+    assert(
+      dialog.indexOf("cursor: pointer") >= 0,
+      "取到的不是设置面板关闭控件的基座规则（缺 cursor: pointer）⇒ 断言会锁错地方"
+    );
+    // ① 尺寸标准仍成对 —— 它同时是两处标题栏等高的前提
+    ["font-size: 14px", "line-height: 1.2", "padding: 2px 6px", "border-radius: 6px", "cursor: pointer"].forEach(
+      (decl) => {
+        assert(
+          dialog.indexOf(decl) >= 0,
+          "设置面板关闭控件缺「" + decl + "」⇒ 与导航面板不成对（两处标题栏高度也会一起变）"
+        );
+        assert(
+          nav.indexOf(decl) >= 0,
+          "导航面板关闭控件缺「" + decl + "」⇒ 标准本身被改坏了"
+        );
+      }
+    );
+    // ② 设置面板那侧已是 <button>：必须显式复位 button 的三件套
+    ["background: transparent", "border: none", "font-family: inherit"].forEach((decl) => {
+      assert(
+        dialog.indexOf(decl) >= 0,
+        "设置面板关闭控件缺「" + decl + "」⇒ <button> 会露出系统按钮外观（灰底/凹陷边框/非页面字体）"
+      );
+    });
+    // ③ 模板必须是 <button type="button">✕</button>，且 &times; 不得残留
+    assert(
+      /<button type="button" class="color-picker-close"[^>]*>✕<\/button>/.test(raw),
+      "设置面板关闭控件模板不是 <button type=\"button\" …>✕</button>"
+    );
+    assert(raw.indexOf("&times;") < 0, "还有 &times; 残留（乘号 × 不是叉号 ✕）");
+    // ④ hover：两处都只换底色；设置面板不得再位移/放大
+    const dHovers = rules(".color-picker-close:hover {");
+    assert(
+      dHovers.some((b) => /background\s*:/.test(b)),
+      "设置面板关闭控件的 hover 没有底色变化 ⇒ 与导航面板观感不一致"
+    );
+    assert(
+      !dHovers.some((b) => /transform\s*:/.test(b)),
+      "设置面板关闭控件 hover 仍在改 transform（导航面板 hover 不位移/不放大）"
+    );
+    assert(
+      rules("#mgga-nav-dock .mgga-nav-dock-close:hover {").some((b) => /background/.test(b)),
+      "导航面板关闭控件的 hover 底色被改掉了"
+    );
+    return "两处 14px/1.2/padding 2px 6px/radius 6px + button 复位三件套 + hover 只换底色";
+  });
+
+  // ---------- 静态回归闸：标题栏 → 第一行设置项 的间距 ----------
+  // 用户 2026-09-23：「标题栏和第一行 body > div.color-picker-dialog.visible >
+  // div.color-picker-content > div:nth-child(1) 设置项的安全距离不正常」。
+  // 真机实测（.workbuddy/probe/diag-fab-gap.js，改前）：分割线 → 第一行只有 **2px**，
+  // 而且那 2px 还不是内容区给的，是标题栏自己的 margin-bottom:2px —— 第一行
+  // （.color-picker-row 无自身 padding）因此紧贴分割线，与它下面各行的 10.5px(0.75em)
+  // 完全不是一个节奏。修法是把差额补在内容区（标题栏的 margin 属于"两处标题栏共用
+  // 标准"，动它会让两个面板分叉，已有闸门锁死）。
+  check("设置面板：分割线 → 第一行 = 行间节奏 0.75em（含补上的标题栏 margin 差额）", () => {
+    const raw = fs.readFileSync(SCRIPT, "utf8");
+    const body = (sel, last) => {
+      const i = last ? raw.lastIndexOf(sel) : raw.indexOf(sel);
+      assert(i > 0, "找不到规则 " + sel);
+      return raw.slice(i + sel.length, raw.indexOf("}", i));
+    };
+    const content = body(".color-picker-content {");
+    const header = body(".color-picker-header {", true);
+    const gap = /gap:\s*([\d.]+)em/.exec(content);
+    const pad = /padding:\s*calc\(\s*([\d.]+)em\s*-\s*(\d+)px\s*\)\s+([\d.]+)em\s+0/.exec(content);
+    const mb = /margin-bottom:\s*(\d+)px/.exec(header);
+    assert(gap, "内容区没有 em 单位的行间 gap ⇒ 第一行的目标间距没有参照系");
+    assert(
+      pad,
+      "内容区顶部内边距不是「calc(Nem - Mpx)」形式 ⇒ 第一行仍紧贴分割线（改前就是 2px）"
+    );
+    assert(mb, "标题栏的 margin-bottom 不见了（第一行间距是照它补的）");
+    assert(
+      pad[1] === gap[1],
+      "上内边距的 em 必须与行间 gap 同源（" + pad[1] + " vs " + gap[1] + "）"
+    );
+    assert(
+      pad[2] === mb[1],
+      "补的差额必须正好等于标题栏的 margin-bottom（" +
+        pad[2] +
+        " vs " +
+        mb[1] +
+        "px）⇒ 否则分割线到第一行不等于一个节奏"
+    );
+    assert(
+      pad[3] === "0.35",
+      "左右内边距被改了（滚动条贴边靠它），实际 " + pad[3] + "em"
+    );
+    return (
+      "分割线 → 第一行 = " + gap[1] + "em（标题栏 margin-bottom " + mb[1] +
+      "px + 内容区上内边距 calc(" + pad[1] + "em - " + pad[2] + "px)）"
+    );
+  });
+
+  // ---------- 静态回归闸：两台悬浮球同源（尺寸 / 图标 / 入场动画）+ 气泡移除 ----------
+  // 用户 2026-09-23：「设置面板的悬浮球的图标改为 SVG，不再使用 unicode，并且做到与
+  // 导航栏悬浮球一样跟随屏幕分辨率和比例自适应缩放尺寸，并保持同样大小。并增加共享的
+  // 悬浮球弹出动画，页面刷新时触发，动画要求要温和不剧烈。导航栏的悬浮球的图标去除
+  // 导航项数量蓝色气泡」。
+  // 改前（真机实测）：导航球写死 44px + 18px SVG，设置球是 unicode ⚙️ 且 2.8em×0.8em
+  // 字号 = 31.36px —— 一大一小、一 SVG 一 emoji。
+  check("两台悬浮球：尺寸与图标同源（vmin 自适应）+ 共用入场动画 + 气泡已移除", () => {
+    const raw = fs.readFileSync(SCRIPT, "utf8");
+    const rule = (sel, last) => {
+      const i = last ? raw.lastIndexOf(sel) : raw.indexOf(sel);
+      assert(i > 0, "找不到规则 " + sel);
+      return raw.slice(i + sel.length, raw.indexOf("}", i));
+    };
+    // ① 共用尺寸变量：定义在 :root（脚本开头无条件注入，两页都在）
+    const root = rule(":root {");
+    const size = /--mgga-fab-size:\s*([^;]+);/.exec(root);
+    const icon = /--mgga-fab-icon:\s*([^;]+);/.exec(root);
+    assert(size, ":root 里没有 --mgga-fab-size ⇒ 两枚球又各写各的尺寸");
+    assert(
+      /vmin/.test(size[1]),
+      "球体尺寸没用 vmin ⇒ 不随分辨率/比例自适应，实际 " + size[1]
+    );
+    assert(/clamp\(/.test(size[1]), "球体尺寸缺 clamp 上下限（极小/极大视口会失控）");
+    assert(
+      icon && /var\(--mgga-fab-size\)/.test(icon[1]),
+      "图标尺寸必须由球体尺寸推导，否则球大了图标不跟"
+    );
+    // ② 两处 width/height 都取同一变量
+    const floatRule = rule("#mgga-float-btn {");
+    const navFab = rule("#mgga-nav-dock-toggle {");
+    ["width", "height"].forEach((p) => {
+      const re = new RegExp("(^|[\\s;])" + p + ":\\s*var\\(--mgga-fab-size");
+      assert(
+        re.test(floatRule),
+        "设置面板悬浮球的 " + p + " 不是共用变量 ⇒ 两枚球大小可能不一致"
+      );
+      assert(
+        re.test(navFab),
+        "导航悬浮球的 " + p + " 不是共用变量 ⇒ 两枚球大小可能不一致"
+      );
+    });
+    // ③ 图标尺寸同源
+    ["#mgga-float-btn > svg {", "#mgga-nav-dock-toggle > svg {"].forEach((sel) => {
+      const b = rule(sel);
+      assert(
+        /width:\s*var\(--mgga-fab-icon/.test(b) && /height:\s*var\(--mgga-fab-icon/.test(b),
+        sel + " 的图标尺寸没用共用变量"
+      );
+    });
+    // ④ 入场动画：keyframes 只此一份；且**绝不能碰 transform**
+    //    （导航球的 translateY(-50%) 带 !important，!important 高于 CSS 动画，
+    //     动画改 transform 会被整条忽略 —— 真机表现为"动画名生效、球纹丝不动"）
+    const kfCount = raw.split("@keyframes mgga-fab-pop").length - 1;
+    assert(kfCount === 1, "入场动画 keyframes 应只有一份（两台球共享），实际 " + kfCount);
+    const kfStart = raw.indexOf("@keyframes mgga-fab-pop");
+    const kf = raw.slice(kfStart, raw.indexOf("@media (prefers-reduced-motion", kfStart));
+    assert(
+      !/transform\s*:/.test(kf),
+      "keyframes 里出现 transform ⇒ 会被导航球那条 !important 整条压掉"
+    );
+    assert(
+      /scale\s*:/.test(kf),
+      "keyframes 里没有声明 scale 属性 ⇒ 只剩淡入，谈不上「弹出」"
+    );
+    assert(/prefers-reduced-motion/.test(raw), "缺少 prefers-reduced-motion 兜底");
+    const popCalls = (raw.match(/triggerFabPop\(/g) || []).length;
+    assert(
+      popCalls === 3,
+      "triggerFabPop 应有 3 处（定义 1 + 两台球各 1），实际 " + popCalls
+    );
+    // ⑤ 蓝色数量气泡：CSS 与 JS 必须同时消失（只删一半 = 没删）
+    assert(
+      raw.indexOf("mgga-nav-dock-badge") < 0 && raw.indexOf("updateNavDockFabBadge") < 0,
+      "导航项数量蓝色气泡还有残留（样式或 JS 只删了一半）"
+    );
+    // ⑥ 设置面板悬浮球改为 SVG 生成
+    assert(/btn\.innerHTML = gearIconSvg\(\);/.test(raw), "悬浮球图标没换成 SVG 生成函数");
+    assert(
+      raw.indexOf('btn.innerHTML = "⚙️"') < 0,
+      "悬浮球仍在用 unicode 齿轮字形（⚙️）"
+    );
+    return (
+      "尺寸 " + size[1].trim() + " / 图标 " + icon[1].trim() +
+      " / keyframes 1 份 / 气泡 0 处"
+    );
   });
 
   // ---------- 场景 3g: 文件区 tab 切换后必须"吸顶"（Contributing / License） ----------

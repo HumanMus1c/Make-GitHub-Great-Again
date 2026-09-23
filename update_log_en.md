@@ -1,3 +1,261 @@
+v2026.9.23 [2026-09-23]
+The settings-panel audit list lands: the keyword list gains overscroll-behavior:contain (scrolling to the end no longer chains to the content area); inline template styles sink into the stylesheet (keyword container sizing and .button-row's margin-top, so editing the CSS finally works); the three never-executing third-party colour-picker adapters are deleted (JS branches plus CSS rules); .color-picker-row gets a uniform min-height:1.6em, fixing a 1.39px row-rhythm gap; the three dialog buttons move to Primer semantics with a dark variant (confirm=primary / cancel=neutral / reset=danger); the panel base font-size becomes clamp(vmin)-driven (280px => 359.88px at 2560x1440, growing together with the floating ball); scrollbar rules are hoisted into a shared immersiveScrollbarCss generator used by both panels (1 host for the nav dock, 2 for the settings panel)
+[
+1. Request (the user's own words): "Continue landing the Release settings panel (.color-picker-dialog) audit list,
+   but show progress live in progress.html in the right sidebar as I specified before." Two decisions were
+   confirmed in the same turn: scope = section 1 (all six items) plus 2.1/2.2 (2.4, extracting a panel-shell
+   primitive, is out of scope); and item 1.3 button colours = switch to Primer semantics and add a dark variant.
+   The progress board lives at .workbuddy/progress.html (auto-refresh every 4s, opened in the right preview
+   panel, not committed).
+2. 1.1 + 1.6 (same element, and the order matters): the keyword container's max-height / overflow-y /
+   margin-bottom used to live in the template's inline style (inline beats the stylesheet, so theming, shared
+   scrollbars and responsive tweaks were all "changed but nothing happened") => sunk into the stylesheet. Only
+   after that is it a scroll host the stylesheet can describe, which is what 2.2's scrollbar rules need. Then
+   overscroll-behavior: contain (it measured "auto" before, and the container really does overflow: 456px of
+   content in a 168-224px viewport; the nav dock's list already used contain, so the two behaved differently).
+   **This also corrects a wording in the audit doc**: it said the scroll "chains to the outer area / the page",
+   but the page never comes into play - the ancestry is kw -> content area -> page, and the content area already
+   carries contain, which cuts the chain in the middle. A dedicated probe (viewport squeezed to 1280x520 so the
+   panel is height-capped and the content area must overflow) shows the real receiver is the **content area**:
+   scrollTop 0 -> 7 before, 0 -> 0 after, while window.scrollY stayed 0 in both revisions. So this item keeps
+   the panel's content area from sliding away while you read the keyword list; it never was about the whole page.
+3. 1.2: the template's <div class="button-row" style="margin-top: 1em;"> fought the stylesheet's
+   margin-top: 0.75em and the inline one won => tuning the gap in CSS never worked. The inline declaration is
+   removed and **that 1em value is folded into the CSS** (not casually reduced to 0.75em, which would be an
+   unrequested visual change), keeping padding-top: 0.35em => 1.35em, bit-for-bit identical to before (live
+   re-check: the button-row gap is still 14px).
+4. 1.4: panel._pickr / _huebee / _spectrum are only ever read and never assigned, and window.Pickr / Huebee / $
+   have no loading logic anywhere => the three if-branches never run; the matching .pcr-app / .huebee /
+   .sp-container CSS rules can never apply either. Deleted wholesale. One self-inflicted pitfall: the first
+   version wrote those identifiers into the "removed" comments => grep-style checks still hit them, i.e. the dead
+   code was not really gone; the comments now describe them in prose, all 11 literals scan clean, which is what
+   lets the gate assert "absent from the whole file". #libraries-container is kept: despite its name it is the
+   built-in picker's mount point, not dead code.
+5. 1.5: row height is decided by the tallest child (a row with a swatch uses .color-button = 0.8em font x 2em
+   about 22.39px, one without uses .color-toggle-btn = 0.8em x 1.8em about 20.16px) => measured
+   22.39 / 22.39 / 22.39 / 21 / 21. .color-picker-row gains min-height: 1.6em (exactly the swatch tier) => all
+   five rows match; the button sizes are deliberately untouched (they are indirectly locked by the paired
+   title-bar gates) and align-items: center keeps content centred. Cost: the panel grows 2.78px taller.
+6. 1.3: confirm = primary (light #1f883d / dark #238636), cancel = neutral (light #f6f8fa / dark #21262d),
+   reset = danger (light #cf222e / dark #da3633) - the same semantic family as the existing "Add" button
+   (#2da44e green). Two details: (a) the cancel button's outline is an inset box-shadow rather than a border,
+   because a border takes part in the box model and would make it 2px taller than the other two (the panel
+   spacing was just dialled in, so no geometry shifts; live re-check: all three measure 27.98px); (b) the
+   colours live **only inside the two prefers-color-scheme blocks** - put them on the base rule and they mask
+   the dark tier (equal specificity follows source order, and the base rule comes first). That also matches the
+   dialog's existing mechanism: it goes through media queries and must not reference GitHub variables, or a
+   light dialog would pick up dark-theme values.
+7. 2.1: the panel's font-size was the fixed --mgga-text-scale (1em) => a constant 20em = 280px width, while the
+   floating ball had already become clamp(38px, 4.4vmin, 56px) => on a 4K screen the ball grew to 56px and the
+   panel did not move at all. Added --mgga-panel-font: clamp(14px, calc(0.735vmin + 7.41px), 18px) and pointed
+   .color-picker-dialog at it; since every size inside the panel is in em, **changing that one value** scales
+   width, row height, gaps and scrollbars together. The numbers are chosen so 1280x896 (vmin 896) lands on 14px
+   - bit-for-bit identical to before, i.e. zero visual change on small screens - and the panel only grows on
+   large ones, capped at 18px (360px) from 1440p up. Measured: 2560x1440 -> 359.88px / 17.994px with the ball at
+   56px, both in step.
+8. 2.2: only the nav dock had scrollbar styling (10-odd handwritten rules plus the Firefox @supports fallback)
+   and the settings panel had none => in a "always show scrollbars" environment, or on Firefox, the two looked
+   inconsistent. Hoisted into a module-level generator immersiveScrollbarCss(hosts, hoverHost): 1 host for the
+   nav dock plus 2 hosts for the settings panel (content area and keyword list). **Moving rules into a runtime
+   generator means moving the assertions too**: once the rules are generated, the old gate looked for that text
+   inside the injectNavDockStyle slice, found nothing and went red for no reason; it now asserts "the generator
+   contains it" plus "each call site passes the right host", with an extra guard that the slice contains no
+   handwritten ::-webkit-scrollbar at all, which keeps the single-source property.
+9. Verification: offline smoke **89/89 PASS** (6 new checks: shared scrollbar section / 1.1+1.6 / 1.2+1.5 /
+   1.3 / 1.4 / 2.1); red-green against the previous script
+   (MGGA_SCRIPT=.workbuddy/probe/prev-before-settings-audit.js = fd2495c): **82 PASS / 7 FAIL**, all seven being
+   this round's new or rewritten discriminators (they point out: handwritten ::-webkit-scrollbar is back / no
+   shared-section generator found / keyword container writes inline styles again / button row writes inline
+   margin-top again / legacy button colour #007bff still present / dead code window.Pickr still present / no
+   --mgga-panel-font clamp found), while the pre-existing 82 checks did not move.
+10. Live (iina/iina, two probes each run against both script revisions):
+    (a) diag-settings-fix-verify.js -> .workbuddy/probe/settings-fix-verify-{before,after}.json: keyword list
+        overscroll auto => contain; the five settings rows 22.39 x3 + 21 x2 => 22.39 x5; buttons
+        #ff6b6b / #007bff / #ffa500 => #cf222e / #f6f8fa+inset / #1f883d (dark: #da3633 / #21262d / #238636)
+        with all three the same height to the pixel (27.98px); the panel goes 280x589.53 => 280x592.31 at
+        1280x896 (row rhythm, +2.78px) and 280x589.53 => 359.88x749.53 at 2560x1440 (font 17.994px, ball
+        56px); scroll hosts keep scrollbar-width: auto, dodging the Chromium 121+ trap; the button-row gap is
+        still 14px.
+    (b) diag-wheel-chain.js -> .workbuddy/probe/wheel-{before,after}.json, which only measures who receives the
+        chained scroll for item 1.1, with the viewport squeezed to 1280x520 so the content area must overflow -
+        at 1280x896 it does not, so the main probe **cannot** detect this item; do not read that as "no effect".
+    Probe pitfall: the main probe's first version inserted the wheel-chaining test right after the 1280 step,
+    and since that test empties the keyword list (filling it with placeholders so it overflows) the later steps
+    measured a panel 165px shorter (about the keyword list's max-height: 168px at 600px viewport height) -
+    self-inflicted; the step now runs after every measurement, i.e. destructive steps always come last.
+11. Not verified: the scrollbar **look** has not been eyeballed - headless Chrome uses overlay scrollbars
+    (offsetWidth - clientWidth is always 0) and never renders the classic bar or its stepper arrows, so this
+    round can only prove "same declarations, right hosts, scrollbar-width not broken"; the look needs a Windows
+    box set to always show scrollbars, or Firefox. The dark tier was only checked for colours, not viewed as a
+    whole (hover states, contrast against the panel border). The 2.1 coefficient was only sampled at both ends
+    (1280 -> 14px, 1440p -> 18px); the middle steps (1920x1080 -> 15.35px) are computed, not eyeballed, and
+    whether 359.88x749.53 looks bloated on 4K is only a number so far. Item 1.1 was only tested with a mouse
+    wheel; trackpad momentum scrolling was not tested separately. Firefox / Safari, very narrow viewports
+    (<=320px) and other repositories were not re-tested.
+12. Rollback point: tag snapshot-settings-panel-audit-20260923 (commit fd2495c). Audit items 2.3 (turn the
+    panel's unicode glyphs into SVG) and 2.4 (extract a panel-shell primitive) are explicitly out of scope this
+    round.
+]
+v2026.9.23 [2026-09-23]
+The settings panel close control now uses the nav dock's <button>✕ (with the button resets); the divider-to-first-row gap goes from 2px to the 0.75em row rhythm; both floating balls share clamp(38px,4.4vmin,56px) plus --mgga-fab-icon (settings ball 31.36px vs nav ball hard-coded 44px => now identical and adaptive); the settings ball icon moves from the unicode gear to SVG (the gear path is hoisted to FAB_GEAR_PATH, single source); both balls gain one shared gentle entrance animation (480ms, opacity/scale only); the nav ball loses its blue item-count bubble, and a pre-existing "rebuilt ball forgets its hidden state" bug is fixed
+[
+1. Request (the user's own words): "Use the repo nav dock's close button style for the Release settings panel title bar;
+   the safe distance between the title bar and the first row
+   body > div.color-picker-dialog.visible > div.color-picker-content > div:nth-child(1)
+   is wrong. Also change the settings floating ball icon to SVG instead of unicode, make it scale with screen
+   resolution and aspect ratio exactly like the nav dock ball and keep both the same size, and add a shared
+   floating-ball entrance animation triggered on page refresh, gentle rather than abrupt. Remove the blue
+   item-count bubble from the nav dock ball." Plus: "analyse what could be improved in the Release settings panel".
+2. Live before -> after (iina/iina, three new probes, raw data in .workbuddy/probe/{fab-gap,fab-pop,
+   settings-audit}.json): close control SPAN× -> BUTTON✕ (hover changed from scale(1.1) to a background only);
+   divider -> first row 2px -> 10.5px; ball sizes 31.36 / 44 (hard-coded) -> 39.42@1280x896 and 47.52@1920x1080
+   (both balls bit-for-bit identical); icon unicode gear -> SVG 16.16 / 19.47; blue bubble (showed 15) gone;
+   the visible title band is still 37.8px, unchanged (the close control's 20.8px height did not move).
+3. The close control is not a CSS copy but a control swap: a <button> does not inherit the page font and brings
+   its own grey background plus a 2px inset border, so besides the four size declarations
+   (14px / line-height 1.2 / padding 2px 6px / radius 6px) it needs background: transparent, border: none and
+   font-family: inherit. The padding is deliberately untouched - it is part of the shared two-bar standard,
+   and changing it would re-open the height difference between the two title bars.
+4. Where the first-row gap really came from: the 2px was the title bar's own margin-bottom, not the content
+   area's; and .color-picker-row carries no padding of its own (measured 0/0), so the first row hugged the
+   divider while every row below it is 10.5px (0.75em) apart. The fix lives in the content area:
+   padding: calc(0.75em - 2px) 0.35em 0 - calc expresses "top up the difference", so whoever changes the
+   header margin is followed automatically, and the shared standard stays untouched.
+5. Floating balls now share their size: :root gains --mgga-fab-size: clamp(38px, 4.4vmin, 56px) (vmin eats
+   both axes, so resolution and aspect ratio both apply) and --mgga-fab-icon: calc(var(--mgga-fab-size) * 0.41)
+   (0.41 is the old 18/44). Both width/height pairs and both > svg rules use the same variables, plus an
+   explicit box-sizing: border-box (the settings ball is a div, the nav ball is a button whose UA default is
+   border-box; without it the two balls differ by the 2px border).
+6. Settings ball icon is now SVG: the gear path used to exist only as ICON_PATHS.gear inside
+   buildNavDockFallbackIcon; it is hoisted to the module-level FAB_GEAR_PATH and ICON_PATHS.gear references it
+   (the same single-source approach as GITHUB_MARK_PATH; the 2323-character path is asserted to appear once).
+   The SVG carries no width/height attributes - sizing belongs to --mgga-fab-icon.
+7. Entrance animation (one shared keyframes, once per ball per page load): 0%{scale:.9,opacity:0} ->
+   60%{scale:1.015,opacity:1} -> 100%{scale:1}, 480ms. It may only touch opacity and scale: the nav ball's
+   vertical centring relies on transform: translateY(-50%) !important, and !important outranks CSS animations
+   in the cascade, so animating transform is ignored wholesale (the animation name applies, the ball does not
+   move). scale is an individual transform property, orthogonal to transform, so it scales around the centre
+   and centring is unaffected. No both/forwards fill either (a filled final frame would keep overriding opacity
+   and the hidden state could never win). JS triggerFabPop attaches the class only when a ball is genuinely
+   created, removes it on animationend and skips hidden states; prefers-reduced-motion is honoured. Live
+   sampling (hook installed before the script, recording the instant the class appears): 0.9/0 -> 0.988/0.767
+   -> back to none/1, the same curve after a reload.
+8. Blue bubble: the badge update function, its two call sites and the whole CSS block are gone, and smoke now
+   asserts the identifiers can never reappear (no half-deletions). A pre-existing bug was fixed along the way:
+   on panel rebuilds (SPA navigation / viewport changes) the old code only synced the expanded state from the
+   menu and clicks, so a rebuilt ball kept no hidden class and popped up when it should not; the rebuild path
+   now re-applies setNavDockExpanded(navDockExpanded).
+9. Verification: offline smoke 83/83 PASS; red/green against the previous script
+   (MGGA_SCRIPT=.workbuddy/probe/prev-before-fab-close.js = 16f8e69): 77 PASS / 6 FAIL, all six being the new
+   discriminators (SPAN / no svg / bubble still there / missing background: transparent / not the calc form /
+   no --mgga-fab-size), with all 77 existing checks untouched. Live geometry and animation in items 2 and 7.
+10. Not verified: Firefox/Safari untested (the scale property needs Chrome 104+/Firefox 72+/Safari 14.1+;
+   older browsers merely lose the entrance animation); dark theme not run live; "gentle rather than abrupt"
+   is subjective (objectively 480ms and a 1.015 peak); very narrow viewports not re-run; 4K full screen hits
+   the 56px cap and has not been eyeballed for being too large.
+11. A separate list covers what could be improved in the Release settings panel
+   (docs/discussions/2026-09-23-settings-panel-audit.md, audited live at three viewport sizes). Priorities:
+   the keyword list's nested scrolling uses overscroll: auto (it chains to the page, unlike the nav dock's
+   contain), .button-row carries two margin-top values (CSS 0.75em plus inline 1em, so editing the CSS does
+   nothing), and three dead external colour-picker branches (_pickr/_huebee/_spectrum are never assigned) can
+   be deleted; also the panel width stays 280px even at 2560 wide, the three dialog buttons hard-code their
+   colours with no dark variant, and the scrollbar styling differs from the nav dock's (overlay scrollbars
+   here mean the visual difference cannot be measured). Each item lists its evidence and trade-offs.
+12. Rollback: tag snapshot-fab-and-close-20260923 (commit 16f8e69).
+]
+v2026.9.23 [2026-09-23]
+The nav dock and the Release settings panel now share one title-bar standard (height 52.09px => 29.8px, matched), the title text shrinks adaptively to the bar width, and the nav dock header gains the settings panel's GitHub mark; follow-up: the settings panel's visible title band (panel top edge => divider) is unified to 37.8px as well
+[
+1. Request (the user's own words): "Unify the title bars of the nav dock and the Release
+   settings panel, take the height from the nav dock standard, shrink the title text
+   adaptively, and on top of the nav dock title bar add the GitHub SVG icon from the
+   Release settings panel." The @version is also bumped from 2026.10.30 to 2026.9.23.
+   Note: 2026.9.23 is a DOWNGRADE and that number was already used historically (see the
+   same-numbered entry dated 2026-09-18 below), so users on 2026.10.30 will not receive
+   this update automatically. Nothing else in the change depends on that literal.
+2. Measured gap before the fix (live, not estimated): nav dock header 29.8px with
+   padding 2px 4px 6px and margin-bottom 2px, settings panel 52.09px with padding 0 0 7px,
+   margin-bottom 14px and a 17.5px bold title. **The real source of the height gap is not
+   the padding but the tallest child**: a title bar's height is max(child height) + padding
+   + bottom border, and the settings panel's close control was 1.5em (24px) with .3em of
+   vertical padding, i.e. roughly 43px tall - far taller than the title text. Levelling
+   only the padding and leaving that control alone still leaves a 23px difference live.
+3. Fix (both bars aligned item by item to the nav dock standard): padding 2px 4px 6px,
+   margin-bottom 2px, border-bottom 1px solid, title font-size 13px, weight 600, title
+   colour muted, close control normalised to 14px / line-height 1.2 / padding 2px 6px.
+   The settings panel's bottom border uses a **theme-agnostic** neutral grey
+   rgba(125,125,125,.25): its palette follows prefers-color-scheme media queries, whereas
+   the nav dock uses --borderColor-muted (which tracks GitHub's own theme). Those are two
+   different theme systems, so referencing the variable there would produce a light dialog
+   with dark-theme values.
+4. Adaptive title shrinking: the title bar becomes container-type: inline-size and the
+   title declares "13px fallback + clamp(11px, 6.5cqi, 13px)". The fallback must come
+   first, because cqi is an invalid unit on older browsers and the whole declaration would
+   be dropped. The 6.5% coefficient keeps both titles at 13px whenever the content box is
+   at least 200px wide - both bars sit above that line in normal use, so the unification is
+   literal - and only scales down below that, flooring at 11px. The icon is sized in em so
+   it shrinks with the title (live: 14.16px -> 12.7px -> 12.09px). Ellipsis is kept as the
+   last resort (min-width:0 + overflow:hidden + ellipsis) so a very narrow bar truncates
+   instead of pushing the close button out.
+5. GitHub mark added to the nav dock title bar: the 16px octicon is now a single source of
+   truth. It used to be inlined twice inside the settings panel (the initial template in
+   buildSettingsDialogHTML and the redraw in updateDialogColors), and this change needed a
+   third copy, so three literals would inevitably drift. Now there is GITHUB_MARK_PATH plus
+   githubMarkSvg(em), called from all three places. The nav dock inserts it with
+   insertAdjacentHTML("afterbegin") before the text, so title.textContent stays exactly
+   "MGGA" (the static gate asserts on NAV_DOCK_BRAND and the accessible name comes from the
+   panel's aria-label, both unaffected). It also gains aria-hidden="true"
+   focusable="false"; the settings panel's copy lacked that (live: ariaHidden=null).
+6. Verification (three layers):
+   (1) Offline smoke: 76/76 PASS. New checks: "nav dock title bar carries the settings
+       panel's GitHub mark" (the mark is the title's first child, viewBox 16,
+       aria-hidden, its path identical to GITHUB_MARK_PATH, textContent still MGGA) and
+       "the version badge comes from the single @version source" (the settings panel half
+       is asserted in the open-settings scenario), plus a source-level gate "both title
+       bars share one height and font-size standard and the title shrinks to the bar width"
+       that pins padding / margin-bottom / border-bottom / container-type / fallback-before-
+       clamp ordering / font-weight / ellipsis / close-control size on both bars, and
+       asserts exactly one mark path with exactly three call sites.
+   (2) Offline red/green: feeding the new assertions to the pre-fix build gives 76 checks
+       with 74 PASS and 2 FAIL (missing mark svg, missing height standard on the settings
+       panel). The 73 pre-existing checks are untouched.
+   (3) Live geometry (.workbuddy/probe/diag-titlebar-live.js, iina/iina, viewports
+       1280/320/200): title-bar height 29.8px vs 52.09px -> **29.8px vs 29.8px**, and it
+       does not move across all three viewports (the height is decided by the close control,
+       decoupled from the title font, so adaptive shrinking cannot drag the bar height
+       around). The nav dock title goes 12.87 -> 11.56 -> 11px (floor) with the mark
+       shrinking in step to 12.09px and zero title overflow; the settings panel stays 13px
+       at 320px (still roomy, so it must not shrink) and drops to 11px at a 200px viewport.
+       Both bars report v2026.9.23.
+       One inferred risk was ruled out by measurement: inline-size containment stops the
+       title bar from contributing to the panel's width: fit-content, which could have
+       collapsed the panel to its min-width. The measured panel width is byte-identical
+       before and after (220px at 1280px, 199.8px at 320px) - the width is still driven by
+       the items area.
+ 8. Follow-up fix (same version, no version bump): the user reported that "the Release settings
+    panel's title bar height still does not match the nav dock, and it is not vertically centred
+    inside the title bar". A fine-grained live probe (.workbuddy/probe/diag-titlebar-fine.js)
+    showed the truth: the two .header elements were ALREADY equal (29.8px vs 29.8px) - the gap is
+    ABOVE them. The nav panel needs border 1px + padding 6px to reach the header, while the
+    settings dialog adds its own padding of 1.25em (17.5px). What the user measures as "the title
+    bar" is the visible band from the panel's top edge to the divider: 49.3px for the settings
+    panel vs 37.8px for the nav dock, with the title sitting 6.25px too low - two symptoms, one
+    root cause.
+    Fix: .color-picker-dialog padding changed from 1.25em to 6px 1.25em 1.25em (the top now
+    matches the nav panel's own padding; left/right/bottom stay 1.25em).
+    After the fix all three metrics match the nav dock exactly: gap 7px, visible band 37.8px,
+    title 0.5px off the band centre (nav dock 0.49px); .header is still 29.8px.
+    One deliberate trade-off: the header keeps the nav dock's asymmetric 2px/6px padding instead
+    of a symmetric 4px/4px - the eye judges the offset from the visible band's centre, and 2/6
+    puts the content exactly there (0.5px), while symmetric padding would sit 3.5px low in both.
+ 9. Stronger gate: the previous static gate only locked the .header declarations, so it stayed
+    green through this defect - which is exactly why it was missed. A new check now locks the
+    PANEL's own top padding (both panels must be equal and 6px). Red/green proven: the new
+    assertion against the pre-fix build gives 76 PASS / 1 FAIL (naming 1.25em vs 6px); after the
+    fix 77/77. Rollback point: tag snapshot-titlebar-vcenter-20260923 (commit b5e4689).
+7. Rollback point: tag snapshot-titlebar-unified-20260923 (commit 32dd2cb).
+]
+
 v2026.10.30 [2026-09-23]
 The nav dock header is moved out of the scroll container; the scrollbar now covers only the items area and never the header (measured live: host 39-213px vs header bottom edge 37px)
 [
