@@ -562,15 +562,15 @@ async function run() {
 
     check("面板控件齐备", () => {
       ["#oddRowColorBtn", "#evenRowColorBtn", "#hoverColorBtn", "#svgToggleBtn",
-       "#mobileFixToggleBtn", "#highlightToggleBtn", "#customKeywordsContainer",
+       "#highlightToggleBtn", "#customKeywordsContainer",
        "#newKeywordInput", "#addKeywordBtn", ".confirm-button", ".cancel-button",
        ".reset-button"].forEach((sel) => {
         assert(relDoc.querySelector(sel), "missing " + sel);
       });
-      return "12 个控件全部存在";
+      return "11 个控件全部存在";
     });
 
-    check("设置面板关闭控件：<button>✕ + 无障碍名（视觉与导航面板成对，见源码闸门）", () => {
+    check("设置面板关闭控件：<button> 装 SVG 叉号 + 无障碍名（与导航面板成对，见源码闸门）", () => {
       const c = relDoc.querySelector(".color-picker-dialog .color-picker-close");
       assert(c, "关闭控件缺失");
       assert(
@@ -581,15 +581,32 @@ async function run() {
         c.getAttribute("type") === "button",
         "缺 type=button ⇒ 位于 form 内会被当成提交按钮"
       );
+      // 图标已从 unicode 字形换成 SVG（审计 §2.3）：这里要同时证明
+      // ① 确实有 SVG ② 它确实是**叉号**而不是对勾/撤销箭头。
+      const svg = c.querySelector("svg");
+      assert(svg, "关闭控件里没有 svg ⇒ 又退回 unicode 字形了");
       assert(
-        c.textContent.trim() === "✕",
-        "字形应是 ✕（U+2715，与导航面板一致），实际 " + JSON.stringify(c.textContent)
+        svg.getAttribute("viewBox") === "0 0 16 16",
+        "图标不是 16px octicon 网格，实际 viewBox=" + JSON.stringify(svg.getAttribute("viewBox"))
+      );
+      const path = svg.querySelector("path");
+      assert(path, "图标缺 path 数据");
+      const src = fs.readFileSync(SCRIPT, "utf8");
+      const xPath = /const UI_ICON_X_PATH\s*=\s*"([^"]+)"/.exec(src);
+      assert(xPath, "源码里找不到 UI_ICON_X_PATH ⇒ 图标单一来源被拆了");
+      assert(
+        path.getAttribute("d") === xPath[1],
+        "关闭控件里的图标不是叉号（与 UI_ICON_X_PATH 不符）"
+      );
+      assert(
+        c.textContent.trim() === "",
+        "关闭控件里还残留文字字形，实际 " + JSON.stringify(c.textContent)
       );
       assert(
         (c.getAttribute("aria-label") || "").length > 0,
         "关闭控件缺 aria-label"
       );
-      return c.outerHTML;
+      return "button + svg(octicon x-16) + aria-label";
     });
 
     check("设置面板悬浮球：图标改为 SVG（不再是 unicode），并挂上入场动画类", () => {
@@ -695,6 +712,31 @@ async function run() {
       return "格式切换 " + fmt.textContent;
     });
 
+    // ---------- 静态回归闸：取色器容器宽度必须是定值 ----------
+    // 用户反馈：「色值类型切到 RGB / HSL 时取色器面板右侧瞬间多出一倍空白」。
+    // 根因（真机取证 docs/discussions/2026-09-23-picker-width-max-content.md）：
+    //   祖先 `.custom-color-picker-panel` 是 `width: max-content`，
+    //   在固有尺寸计算那一遍包含块宽度**不定** ⇒ 百分比按 auto 处理 ⇒ 容器原写法
+    //   `width: min(250px, 100%)` 拿不出 250px，退化成"取内容固有尺寸"；
+    //   而 `<input type="text">` 不带 size 时固有宽按**默认 20 字符**计，
+    //   切到 RGB/HSL 多出的三个数字框各贡献 ≈165px ⇒ 面板 281.17 → 605.67，
+    //   容器却恒 250、输入行实际布局逐字不动（227.63）⇒ 多出的 331.28px 全成空白。
+    // jsdom 无排版层 ⇒ 这条只锁源码声明（宽度必须写成定值），几何交给真机探针
+    // `.workbuddy/probe/diag-picker-format-width.js`（三种格式各量一次面板/容器/留白）。
+    check("取色器容器宽度是定值（不给 max-content 祖先留漏）", () => {
+      const src = fs.readFileSync(SCRIPT, "utf8"); // 本区块作用域里没有 raw，就地读（同 940/1494 等处）
+      const ruleM = /\.builtin-color-picker-container\s*\{([^}]*)\}/.exec(src);
+      assert(ruleM, "找不到 .builtin-color-picker-container 规则");
+      const body = ruleM[1].replace(/\/\*[\s\S]*?\*\//g, ""); // 去掉注释再断言，免得注释自伤
+      assert(/width:\s*250px\s*;/.test(body), "容器宽度不是定值 250px");
+      assert(/max-width:\s*100%\s*;/.test(body), "容器缺少窄屏收缩用的 max-width:100%");
+      assert(
+        !/\bmin\s*\(\s*250px/.test(body),
+        "容器宽度又回到 min(250px, 100%) 这种不定值写法 ⇒ 面板会被内部输入框的固有宽度撑开"
+      );
+      return "容器宽度 = 250px + max-width:100%（窄屏仍可收缩）";
+    });
+
     check("添加关键词规则生效", () => {
       const input = relDoc.querySelector("#newKeywordInput");
       input.value = "nightly";
@@ -714,10 +756,9 @@ async function run() {
       return before + " -> " + t.innerHTML;
     });
 
-    check("三个功能开关各自持久化并生效", () => {
+    check("两个功能开关各自持久化并生效", () => {
       const cases = [
         ["#svgToggleBtn", "svgEnabled"],
-        ["#mobileFixToggleBtn", "mobileLayoutFix"],
         ["#highlightToggleBtn", "highlightEnabled"],
       ];
       const out = [];
@@ -1640,7 +1681,7 @@ async function run() {
       /min-height:\s*1\.6em/.test(rwBody),
       "行节奏未统一（§1.5：缺 min-height:1.6em，后两行会比前三行矮 1.39px）"
     );
-    return "按钮行间距只在 CSS（1em + padding 0.35em）；六行同高";
+    return "按钮行间距只在 CSS（1em + padding 0.35em）；设置行同高";
   });
 
   check("设置面板 §1.3：三颗按钮走 Primer 语义色，深浅两档齐全", () => {
@@ -1695,6 +1736,71 @@ async function run() {
     });
     assert(raw.indexOf("initializeLibraries") > 0, "内置取色器实现被误删 ⇒ 取色功能没了");
     return "三个库的同步分支与三条样式规则均无残留，内置取色器仍在";
+  });
+
+  // ---------- 静态回归闸：仓库头按钮溢出修正已整体删除（用户 2026-09-23 决定）----------
+  // 该补丁靠 !important 覆盖 GitHub 私有类名（.show-whenNarrow / .tmp-mb-3 /
+  // .d-flex.gap-2 / HeaderContent）+ 往 DOM 打内联样式来强制仓库头那行按钮换行。
+  // 真机复测（.workbuddy/probe/diag-header-btn-fix-value.js，桌面 UA 与移动 UA 两档 ×
+  // 480/760/1280 三视口）证明它**已完全失效**：三个作用点（行 → 子组 → 按钮）的选择器
+  // 命中 0、开关开/关两档几何逐字相同、原始横向溢出症状不再出现 ⇒ 删除零代价。
+  // 判据分两层：① 源码全文不含这套标识符（**注释里也不许留** —— 写在「已删除」注释里的
+  // 标识符会让 grep 型检查继续命中，等于没删干净）；② 运行期既不注入样式表也不打标。
+  // 注意**不能**拿 `.show-whenNarrow` / `HeaderContent` 当判据：悬浮导航仍在用它们做
+  // 「排除 GitHub 窄屏 chrome」的反向过滤，那是正当引用。
+  check("仓库头按钮溢出修正：整套实现 + 面板开关 + 菜单项已整体删除", () => {
+    const raw = fs.readFileSync(SCRIPT, "utf8");
+    [
+      "applyMobileLayoutFix",
+      "isMobileLayoutFixEnabled",
+      "injectHeaderBtnFixStyle",
+      "applyHeaderBtnRowLayout",
+      "scheduleHeaderBtnFix",
+      "startHeaderBtnBootstrap",
+      "setupHeaderBtnObserver",
+      "teardownHeaderBtnObserver",
+      "mgga-header-btn-fix",
+      "HEADER_BTN_FIX_STYLE_ID",
+      "mggaHeaderBtnRow",
+      "headerBtnObserver",
+      "headerBtnDebounce",
+      "headerBtnBootstrapTimer",
+      "mobileFixToggleBtn",
+      "mobileLayoutFix",
+      "mobileFix",
+      "tmp-mb-3",
+    ].forEach((t) => {
+      assert(raw.indexOf(t) < 0, "该功能应已整体删除，仍残留：" + t);
+    });
+
+    // 运行期：不注入样式表、不给 <html> 加类、不往按钮行打标、面板里没有那行开关
+    assert(
+      !relDoc.getElementById("mgga-header-btn-fix-style"),
+      "仍注入了仓库头按钮修正样式表"
+    );
+    assert(
+      !relDoc.documentElement.classList.contains("mgga-header-btn-fix"),
+      "仍给 <html> 加了仓库头修正类"
+    );
+    assert(
+      relDoc.querySelectorAll('[data-mgga-header-btn-row="1"]').length === 0,
+      "仍往仓库头按钮行打了内联标记"
+    );
+    // 设置面板模板里的开关行剩 4 条（奇/偶/悬停 + 图标识别）；关键词块不用这个类。
+    // 走源码切片而不是 jsdom 运行时：设置面板是**按需创建**的（打开菜单项才建），
+    // 静态区跑不到那一步 —— 直接查 DOM 只会恒得 0（第一版就踩了这个坑）。
+    const tplStart = raw.indexOf("function buildSettingsDialogHTML");
+    const tplEnd = raw.indexOf("function createColorPickerPanel");
+    assert(tplStart > 0 && tplEnd > tplStart, "找不到设置面板模板切片");
+    const tpl = raw.slice(tplStart, tplEnd);
+    const rowCount = (tpl.match(/class="color-picker-row"/g) || []).length;
+    assert(
+      rowCount === 4,
+      "设置面板开关行应为 4 条（奇/偶/悬停 + 图标识别），实际 " + rowCount
+    );
+    // 油猴菜单也少了一项：6 项（导航、设置、奇/偶/悬停、重置）
+    assert(rel.menu.length === 6, "菜单命令数应为 6，实际 " + rel.menu.length);
+    return "源码 0 残留 / 运行期不注入不打标 / 面板 4 行开关 / 菜单 6 项";
   });
 
   check("设置面板 §2.1：面板基准字号随视口自适应（与悬浮球同源吃 vmin）", () => {
@@ -1963,12 +2069,20 @@ async function run() {
         "设置面板关闭控件缺「" + decl + "」⇒ <button> 会露出系统按钮外观（灰底/凹陷边框/非页面字体）"
       );
     });
-    // ③ 模板必须是 <button type="button">✕</button>，且 &times; 不得残留
+    // ③ 模板必须是 <button type="button">装 SVG 叉号</button>，且历史字形不得残留
     assert(
-      /<button type="button" class="color-picker-close"[^>]*>✕<\/button>/.test(raw),
-      "设置面板关闭控件模板不是 <button type=\"button\" …>✕</button>"
+      /<button type="button" class="color-picker-close"[^>]*>\$\{uiIconSvg\("x"\)\}<\/button>/.test(raw),
+      '设置面板关闭控件模板不是 <button type="button" …>装 uiIconSvg("x")</button>'
     );
-    assert(raw.indexOf("&times;") < 0, "还有 &times; 残留（乘号 × 不是叉号 ✕）");
+    // 历史字形：乘号实体、叉号字形、对勾字形 —— 一个都不许留，**注释里也不行**
+    // （注释里留着字面量会让「全文不含某字形」这类最强断言失去意义，等于没删干净）。
+    // 注意不断言乘号字面量本身：它在尺寸注释里是合法用法（如 1280×896）。
+    ["&times;", "\u2715", "\u2713"].forEach((glyph) => {
+      assert(
+        raw.indexOf(glyph) < 0,
+        "源码里仍有旧字形残留 " + JSON.stringify(glyph) + " ⇒ 字形没统一到 SVG"
+      );
+    });
     // ④ hover：两处都只换底色；设置面板不得再位移/放大
     const dHovers = rules(".color-picker-close:hover {");
     assert(
@@ -1984,6 +2098,55 @@ async function run() {
       "导航面板关闭控件的 hover 底色被改掉了"
     );
     return "两处 14px/1.2/padding 2px 6px/radius 6px + button 复位三件套 + hover 只换底色";
+  });
+
+  // ---------- 静态回归闸：面板内状态字形已统一到 SVG ----------
+  // 用户 2026-09-23 拍板实施审计 §2.3。改前面板里散落着 unicode 状态字形
+  // （对勾 U+2713 / 叉号 U+2715；关键词操作按钮还各用了乘号与弯箭头），它们由
+  // 系统字体渲染 —— 粗细、基线、字面大小都不可控，与已 SVG 化的悬浮球、导航项
+  // 图标也不同源。
+  // 两件事必须同时成立，缺一不可：
+  //   ① 旧字形绝迹（**含注释** —— 注释里留着字面量会让「全文不含某字形」这类
+  //      最强断言失去意义，等于没删干净）；
+  //   ② 替代它的 SVG 尺寸**走 1em 且不得 display:block** —— 关闭控件、清除按钮、
+  //      开关按钮的高度都靠 line-height 撑行盒，block 会让行盒塌成图标自身的 1em，
+  //      两处标题栏会一起矮 2.8px（用户核对过两次的那条线）。
+  check("面板状态字形已统一到 SVG（对勾 / 叉号 / 撤销三枚 + 尺寸 1em 不改行盒）", () => {
+    const raw = fs.readFileSync(SCRIPT, "utf8");
+    ["\u2713", "\u2715"].forEach((glyph) => {
+      assert(
+        raw.indexOf(glyph) < 0,
+        "源码里仍有 unicode 状态字形 " + JSON.stringify(glyph) + "（含注释）⇒ 未统一到 SVG"
+      );
+    });
+    const get = (name) => {
+      const m = new RegExp("const " + name + "\\s*=\\s*\"([^\"]+)\"").exec(raw);
+      assert(m, "缺常量 " + name);
+      return m[1];
+    };
+    const three = [get("UI_ICON_CHECK_PATH"), get("UI_ICON_X_PATH"), get("UI_ICON_UNDO_PATH")];
+    assert(new Set(three).size === 3, "对勾/叉号/撤销三枚 path 有重复 ⇒ 换图标只是换了个名字");
+    const calls = (raw.match(/uiIconSvg\(/g) || []).length;
+    assert(
+      calls >= 13,
+      "uiIconSvg 出现 " + calls + " 次（含定义），少于预期的 13 次 ⇒ 有位置漏改"
+    );
+    const rule = /\.color-toggle-btn > svg,[\s\S]*?\}/.exec(raw);
+    assert(rule, "找不到状态图标的统一尺寸规则");
+    assert(
+      !/display:\s*block/.test(rule[0]),
+      "图标被设成 display:block ⇒ 行盒塌成 1em，按钮与两处标题栏会一起矮"
+    );
+    assert(
+      /width:\s*1em/.test(rule[0]) && /height:\s*1em/.test(rule[0]),
+      "图标尺寸不是 1em ⇒ 跟随不了各处字号"
+    );
+    [".custom-keyword-item .keyword-action-btn > svg", "#mgga-nav-dock .mgga-nav-dock-close > svg"].forEach(
+      (sel) => {
+        assert(rule[0].indexOf(sel) >= 0, "统一尺寸规则漏了 " + sel);
+      }
+    );
+    return "旧字形 0 处；check/x/undo 三枚独立；" + calls + " 处调用；尺寸 1em 且无 block";
   });
 
   // ---------- 静态回归闸：标题栏 → 第一行设置项 的间距 ----------

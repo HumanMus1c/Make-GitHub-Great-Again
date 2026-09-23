@@ -58,7 +58,6 @@
         defaultTag: { zh: "默认", en: "Default" },
         restore: { zh: "恢复", en: "Restore" },
         deleteRule: { zh: "删除", en: "Delete" },
-        mobileFix: { zh: "修正仓库头按钮溢出", en: "Fix repo header button overflow" },
         navDock: { zh: "左侧悬浮导航", en: "Floating nav dock" },
         navDockMenuToggle: {
           zh: "展开/收起悬浮导航",
@@ -161,6 +160,44 @@
     return (
       '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="' +
       FAB_GEAR_PATH +
+      '"/></svg>'
+    );
+  }
+
+  // === 面板内「对勾 / 叉号」两枚状态图标（octicon check-16 / x-16）单一来源 ===
+  // 原先这些位置都是 unicode 字形（U+2713 对勾 / U+2715 叉号）。字形由系统字体渲染，
+  // 粗细、基线、字面大小都不可控，且与已经改成 SVG 的悬浮球、导航项图标不同源。
+  // 路径与上面两枚同理**不手写**，取自 @primer/octicons 官方 16px 数据。
+  const UI_ICON_CHECK_PATH =
+    "M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z";
+  const UI_ICON_X_PATH =
+    "M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z";
+  const UI_ICON_UNDO_PATH =
+    "M1.22 6.28a.749.749 0 0 1 0-1.06l3.5-3.5a.749.749 0 1 1 1.06 1.06L3.561 5h7.188l.001.007L10.749 5c.058 0 .116.007.171.019A4.501 4.501 0 0 1 10.5 14H8.796a.75.75 0 0 1 0-1.5H10.5a3 3 0 1 0 0-6H3.561L5.78 8.72a.749.749 0 1 1-1.06 1.06l-3.5-3.5Z";
+
+  const UI_ICON_PATHS = {
+    check: UI_ICON_CHECK_PATH,
+    x: UI_ICON_X_PATH,
+    undo: UI_ICON_UNDO_PATH,
+  };
+
+  /**
+   * 状态图标 SVG 字符串。kind: "check"（对勾）| "x"（叉号）| "undo"（撤销/恢复）。
+   * 未登记的 kind 落到对勾（即"启用/正常"态）。
+   *
+   * **不写 width/height 属性**（与 gearIconSvg 同一套理由）：尺寸交给 CSS 的
+   * width/height: 1em，于是它自动跟随各处的字号 —— 开关按钮里是 0.8em 基准、
+   * 关闭控件里是 14px、清除按钮里是 0.85em、关键词操作按钮里是 0.9em，
+   * 一条规则全包，不必逐处写死像素。
+   *
+   * 这些图标一律是 decoration-only：aria-hidden + focusable=false。无障碍名由
+   * 宿主控件自己的 aria-label / title 给（图标本身不该被念出来）。
+   */
+  function uiIconSvg(kind) {
+    const d = UI_ICON_PATHS[kind] || UI_ICON_PATHS.check;
+    return (
+      '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="' +
+      d +
       '"/></svg>'
     );
   }
@@ -1122,13 +1159,16 @@
         }
 
         /* 关闭控件：**与导航面板关闭按钮同一套视觉**（用户 2026-09-23 要求
-           "使用仓库页导航栏的关闭按钮样式"）。原来是个 <span>×</span>：字形是
-           乘号（×，U+00D7）而不是叉号（✕，U+2715），hover 还会 scale(1.1) 放大
-           —— 导航面板是 <button>✕</button>，hover 只换底色不位移。
-           换成 button 后**必须显式复位**：button 不继承页面字体（font-family）、
-           自带灰色底与 2px 凹陷边框，不写这几条就会在页面里露出一圈系统按钮。
+           "使用仓库页导航栏的关闭按钮样式"）。控件是 button，内部装 SVG 叉号
+           （此前用过乘号与叉号两种字形，字体渲染的粗细/基线/字面大小都不可控，
+           已统一到 uiIconSvg 那一份图标）。
+           button 需要**显式复位**：不继承页面字体（font-family）、自带灰色底与
+           2px 凹陷边框，不写这几条就会在页面里露出一圈系统按钮。
            尺寸仍与导航面板成对（14px / line-height 1.2 / padding 2px 6px），
-           所以两处标题栏高度不受影响。 */
+           所以两处标题栏高度不受影响 —— 但**图标必须留在行内且不脱离行盒**：
+           line-height 1.2 撑出 16.8px 的行盒，图标 1em = 14px 落在其内，按钮高
+           才是 16.8 + 4 = 20.8px。一旦把图标改成 display:block，行盒塌成 14px，
+           按钮与两处标题栏会一起矮 2.8px（这条线用户核对过两次，别碰）。 */
         .color-picker-close {
             cursor: pointer;
             padding: 2px 6px;
@@ -1142,6 +1182,23 @@
             appearance: none;
             transition: color 0.2s ease, background 0.2s ease;
             flex-shrink: 0;
+        }
+
+        /* 面板内的状态图标（对勾 / 叉号 / 撤销，均出自 uiIconSvg）：尺寸与各自字号同源 ——
+           开关按钮里是 0.8em 基准、关闭控件里是 14px、清除按钮里是 0.85em、
+           关键词操作按钮里是 0.9em，一条 1em 全包，不必逐处写死像素。
+           **必须是行内盒且不脱离行盒**（这里只给 vertical-align，绝不用 display:block）：
+           关闭控件与清除按钮的高度都靠 line-height 撑行盒得到，改成 block 会让行盒
+           塌成图标自身的 1em，按钮与两处标题栏一起矮 —— 判据见 .color-picker-close
+           那段注释。开关按钮是 flex 容器，vertical-align 对它无效但无害。 */
+        .color-toggle-btn > svg,
+        .builtin-clear-btn > svg,
+        .color-picker-close > svg,
+        .custom-keyword-item .keyword-action-btn > svg,
+        #mgga-nav-dock .mgga-nav-dock-close > svg {
+            width: 1em;
+            height: 1em;
+            vertical-align: middle;
         }
 
         /* hover 与导航面板一致：底色换成中性灰、文字变正文色，**不放大不位移** */
@@ -1617,7 +1674,19 @@
             padding: 0.8em;
             background: rgba(125, 125, 125, 0.05);
             border-radius: 0.3em;
-            width: min(250px, 100%); /* 常规固定宽度，窄屏时收缩 */
+            /* 宽度**必须是定值**，不能写 min(250px, 100%)：本容器的祖先
+               .custom-color-picker-panel 是 width: max-content，在固有尺寸计算那一遍
+               包含块宽度是**不定的**，百分比按 auto 处理 ⇒ 那个 100% 等于不存在，
+               整条声明退化成"容器取内容固有尺寸"，于是容器内部的固有宽度（每个
+               input[type=text] 不带 size 时默认按 20 字符计）会把整个面板撑开。
+               实测：切到 RGB/HSL 后多出三个数字框，面板 281.17 → 605.67，而容器恒 250、
+               输入行实际布局逐字不动（227.63）⇒ 多出的 331.28px 全成了右侧空白。
+               改成定值 250px 后，固有尺寸那一遍拿到确定值，面板恒为
+               「250 + 0.8em×2 + 边框 2」= 274.4（三种格式一致）。窄屏收缩交给
+               max-width: 100%（百分比在固有尺寸那一遍按 none 处理，不影响这里的定值语义）。
+               ⚠️ 这段注释处于模板字符串内：**不能出现反引号**，否则提前闭合、只有
+               node --check 会报。 */
+            width: 250px;
             max-width: 100%;
             box-sizing: border-box;
         }
@@ -1914,30 +1983,27 @@
     return `
             <div class="color-picker-header">
                 <h3 class="color-picker-title">${githubMarkSvg("1.1em")} ${i18n.t("settingsTitle")} <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7;">v${getScriptVersion()}</span></h3>
-                <button type="button" class="color-picker-close" aria-label="${i18n.t("close")}" title="${i18n.t("close")}">✕</button>
+                <button type="button" class="color-picker-close" aria-label="${i18n.t("close")}" title="${i18n.t("close")}">${uiIconSvg("x")}</button>
             </div>
             <div class="color-picker-content">
                 <div class="color-picker-row">
-                    <span class="menu-command"><button class="color-toggle-btn" id="toggleOddRowBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("oddRow")}</span>
+                    <span class="menu-command"><button class="color-toggle-btn" id="toggleOddRowBtn" title="${i18n.t("enabledTitle")}">${uiIconSvg("check")}</button>${i18n.t("oddRow")}</span>
                     <button class="color-button" id="oddRowColorBtn" style="background-color: ${sanitizeHexColor(customColors.oddRowColor, "#f8f9fa")}"></button>
                 </div>
                 <div class="color-picker-row">
-                    <span class="menu-command"><button class="color-toggle-btn" id="toggleEvenRowBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("evenRow")}</span>
+                    <span class="menu-command"><button class="color-toggle-btn" id="toggleEvenRowBtn" title="${i18n.t("enabledTitle")}">${uiIconSvg("check")}</button>${i18n.t("evenRow")}</span>
                     <button class="color-button" id="evenRowColorBtn" style="background-color: ${sanitizeHexColor(customColors.evenRowColor, "#ffffff")}"></button>
                 </div>
                 <div class="color-picker-row">
-                    <span class="menu-command"><button class="color-toggle-btn" id="toggleHoverBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("hoverRow")}</span>
+                    <span class="menu-command"><button class="color-toggle-btn" id="toggleHoverBtn" title="${i18n.t("enabledTitle")}">${uiIconSvg("check")}</button>${i18n.t("hoverRow")}</span>
                     <button class="color-button" id="hoverColorBtn" style="background-color: ${sanitizeHexColor(customColors.hoverColor, "#e9ecef")}"></button>
                 </div>
                 <div class="color-picker-row">
-                    <span class="menu-command"><button class="color-toggle-btn" id="svgToggleBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("svgIdentify")}</span>
-                </div>
-                <div class="color-picker-row">
-                    <span class="menu-command"><button class="color-toggle-btn" id="mobileFixToggleBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("mobileFix")}</span>
+                    <span class="menu-command"><button class="color-toggle-btn" id="svgToggleBtn" title="${i18n.t("enabledTitle")}">${uiIconSvg("check")}</button>${i18n.t("svgIdentify")}</span>
                 </div>
                 <div style="margin-top: 0.75em; border-top: 1px solid rgba(125, 125, 125, 0.2); padding-top: 0.75em;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5em;">
-                        <span class="menu-command"><button class="color-toggle-btn" id="highlightToggleBtn" title="${i18n.t("enabledTitle")}">✓</button>${i18n.t("highlightTitle")}</span>
+                        <span class="menu-command"><button class="color-toggle-btn" id="highlightToggleBtn" title="${i18n.t("enabledTitle")}">${uiIconSvg("check")}</button>${i18n.t("highlightTitle")}</span>
                     </div>
                     <div id="customKeywordsContainer">
                         <!-- 动态渲染关键词列表 -->
@@ -2051,7 +2117,7 @@
                                     <input type="text" class="builtin-color-value-input builtin-input-2" placeholder="Val2" maxlength="3" />
                                     <input type="text" class="builtin-color-value-input builtin-input-3" placeholder="Val3" maxlength="3" />
                                 </div>
-                                <button class="builtin-clear-btn" title="${i18n.t("clear")}">✕</button>
+                                <button class="builtin-clear-btn" title="${i18n.t("clear")}">${uiIconSvg("x")}</button>
                             </div>
 
                             <!-- 预设颜色 -->
@@ -2553,9 +2619,9 @@
   }
 
   /**
-   * 绑定设置面板顶部的三个功能开关：图标识别 / 移动端布局修正 / 关键词高亮。
-   * 三者行为完全同构（读存储 → 绘制态 → 点击翻转 → 写存储 → 重新应用），
-   * 故合并为一次实现，避免三段近乎逐字重复的代码各自漂移。
+   * 绑定设置面板顶部的功能开关：图标识别 / 关键词高亮。
+   * 两者行为完全同构（读存储 → 绘制态 → 点击翻转 → 写存储 → 重新应用），
+   * 故合并为一次实现，避免两段近乎逐字重复的代码各自漂移。
    */
   function bindFeatureToggleButtons(dialog) {
     const bindToggle = (selector, storageKey, reapplied) => {
@@ -2565,7 +2631,7 @@
       let enabled = GM_getValue(storageKey, true);
       const paint = (on) => {
         btn.classList.toggle("disabled", !on);
-        btn.innerHTML = on ? "✓" : "✕";
+        btn.innerHTML = on ? uiIconSvg("check") : uiIconSvg("x");
         btn.title = on ? i18n.t("enabledTitle") : i18n.t("disabledTitle");
       };
 
@@ -2581,7 +2647,6 @@
     };
 
     bindToggle("#svgToggleBtn", "svgEnabled", processAssets);
-    bindToggle("#mobileFixToggleBtn", "mobileLayoutFix", applyMobileLayoutFix);
     bindToggle("#highlightToggleBtn", "highlightEnabled", processAssets);
   }
 
@@ -2683,7 +2748,8 @@
         const actionClass = rule.pendingDelete
           ? "keyword-action-btn keyword-restore"
           : "keyword-action-btn keyword-remove";
-        const actionIcon = rule.pendingDelete ? "↩" : "×";
+        // 删除用叉号、待删（可恢复）用撤销箭头 —— 两者都是 SVG，不再走 unicode 字形
+        const actionIcon = uiIconSvg(rule.pendingDelete ? "undo" : "x");
         const actionTitle = rule.pendingDelete
           ? i18n.t("restore")
           : i18n.t("deleteRule");
@@ -2901,8 +2967,8 @@
       });
     };
 
-    // 三个功能开关（图标识别 / 移动端布局修正 / 关键词高亮）
-    // 见模块级 bindFeatureToggleButtons：三段原本近乎逐字重复，已合并为一次实现
+    // 两个功能开关（图标识别 / 关键词高亮）
+    // 见模块级 bindFeatureToggleButtons：两段原本近乎逐字重复，已合并为一次实现
     bindFeatureToggleButtons(dialog);
 
     // 获取元素引用
@@ -2953,11 +3019,11 @@
     const updateToggleBtnUI = (btn, isEnabled) => {
       if (isEnabled) {
         btn.classList.remove("disabled");
-        btn.innerHTML = "✓";
+        btn.innerHTML = uiIconSvg("check");
         btn.title = i18n.t("enabledTitle");
       } else {
         btn.classList.add("disabled");
-        btn.innerHTML = "✕";
+        btn.innerHTML = uiIconSvg("x");
         btn.title = i18n.t("disabledTitle");
       }
     };
@@ -3240,11 +3306,6 @@
   }
 
   // 注册油猴菜单选项
-  GM_registerMenuCommand(i18n.t("mobileFix"), () => {
-    const next = !GM_getValue("mobileLayoutFix", true);
-    GM_setValue("mobileLayoutFix", next);
-    applyMobileLayoutFix();
-  });
   GM_registerMenuCommand(i18n.t("navDockMenuToggle"), () => {
     toggleNavDockPanelFromMenu();
   });
@@ -4428,206 +4489,12 @@
     }
   });
 
-  // === 仓库头操作按钮行溢出修正 ===
-  // 真因（实机）：新版仓库头 narrow 布局里，Watch/Fork/Star/Sponsor 等按钮所在的
-  // flex 行未按屏幕宽度换行/收缩，最后一个 Sponsor 按钮顶出主列，把文档撑宽，
-  // 右侧因此出现一整列空白。
-  // 对策：只改这一行按钮的布局行为（强制 wrap + 允许收缩 + 容器限宽），默认开启。
-  const HEADER_BTN_FIX_STYLE_ID = "mgga-header-btn-fix-style";
-  let headerBtnObserver = null;
-  let headerBtnDebounce = null;
-  let headerBtnBootstrapTimer = null;
-
-  function isMobileLayoutFixEnabled() {
-    return GM_getValue("mobileLayoutFix", true);
-  }
-
-  function injectHeaderBtnFixStyle() {
-    const existing = document.getElementById(HEADER_BTN_FIX_STYLE_ID);
-    if (!isMobileLayoutFixEnabled()) {
-      if (existing) existing.remove();
-      document.documentElement.classList.remove("mgga-header-btn-fix");
-      return;
-    }
-    if (existing) return;
-
-    const style = document.createElement("style");
-    style.id = HEADER_BTN_FIX_STYLE_ID;
-    style.setAttribute("data-mgga-mutation-guard", "1");
-    style.textContent = `
-      /* MGGA: repo header action row — wrap / shrink so Sponsor cannot overflow */
-      html.mgga-header-btn-fix #repos-split-pane-content header,
-      html.mgga-header-btn-fix #repos-split-pane-content header [class*="HeaderContent"],
-      html.mgga-header-btn-fix #repos-split-pane-content header .show-whenNarrow {
-        max-width: 100% !important;
-        min-width: 0 !important;
-      }
-
-      /* 外层 flex 行（含 .tmp-mb-3.flex-wrap）：必须换行，且不超过主列宽度 */
-      html.mgga-header-btn-fix #repos-split-pane-content header .show-whenNarrow .d-flex,
-      html.mgga-header-btn-fix #repos-split-pane-content header .tmp-mb-3,
-      html.mgga-header-btn-fix header .d-flex.gap-2.tmp-mb-3 {
-        flex-wrap: wrap !important;
-        max-width: 100% !important;
-        min-width: 0 !important;
-        width: 100% !important;
-        box-sizing: border-box !important;
-      }
-
-      /* 行内的按钮组 div：自身也允许换行/收缩 */
-      html.mgga-header-btn-fix #repos-split-pane-content header .show-whenNarrow .d-flex > div,
-      html.mgga-header-btn-fix header .d-flex.gap-2.tmp-mb-3 > div {
-        min-width: 0 !important;
-        max-width: 100% !important;
-        flex: 1 1 auto !important;
-        flex-wrap: wrap !important;
-        box-sizing: border-box !important;
-      }
-
-      /* 组内按钮（Watch / Fork / Star / Sponsor…）：允许收缩，不再用 max-content 顶宽 */
-      html.mgga-header-btn-fix #repos-split-pane-content header .show-whenNarrow button,
-      html.mgga-header-btn-fix #repos-split-pane-content header .show-whenNarrow a,
-      html.mgga-header-btn-fix header .d-flex.gap-2.tmp-mb-3 button,
-      html.mgga-header-btn-fix header .d-flex.gap-2.tmp-mb-3 a {
-        min-width: 0 !important;
-        max-width: 100% !important;
-        flex-shrink: 1 !important;
-        flex-grow: 0 !important;
-        box-sizing: border-box !important;
-      }
-    `;
-    document.documentElement.classList.add("mgga-header-btn-fix");
-    document.head.appendChild(style);
-  }
-
-  // 对目标按钮行打标并强制 wrap（兼容 GitHub 换 class 后仍命中结构）
-  function applyHeaderBtnRowLayout() {
-    if (!isMobileLayoutFixEnabled()) return;
-    const selectors = [
-      "#repos-split-pane-content header .show-whenNarrow .d-flex",
-      "#repos-split-pane-content header .tmp-mb-3",
-      "header .d-flex.gap-2.tmp-mb-3",
-    ];
-    const rows = document.querySelectorAll(selectors.join(","));
-    let appliedCount = 0;
-    rows.forEach((row) => {
-      if (!(row instanceof HTMLElement)) return;
-      // 幂等短路：已打过标且样式未丢失时跳过，避免与自身 observer 形成循环
-      if (
-        row.dataset.mggaHeaderBtnRow === "1" &&
-        row.style.flexWrap === "wrap"
-      ) {
-        appliedCount++;
-        return;
-      }
-      appliedCount++;
-      row.dataset.mggaHeaderBtnRow = "1";
-      row.style.flexWrap = "wrap";
-      row.style.maxWidth = "100%";
-      row.style.minWidth = "0";
-      row.style.width = "100%";
-      row.style.boxSizing = "border-box";
-      Array.from(row.children).forEach((group) => {
-        if (!(group instanceof HTMLElement)) return;
-        group.style.flexWrap = "wrap";
-        group.style.maxWidth = "100%";
-        group.style.minWidth = "0";
-        group.style.flex = "1 1 auto";
-        group.style.boxSizing = "border-box";
-        group.querySelectorAll("button, a").forEach((btn) => {
-          if (!(btn instanceof HTMLElement)) return;
-          btn.style.minWidth = "0";
-          btn.style.maxWidth = "100%";
-          btn.style.flexShrink = "1";
-        });
-      });
-    });
-    return appliedCount;
-  }
-
-  function scheduleHeaderBtnFix() {
-    if (!isMobileLayoutFixEnabled()) return;
-    if (headerBtnDebounce) clearTimeout(headerBtnDebounce);
-    headerBtnDebounce = setTimeout(() => {
-      headerBtnDebounce = null;
-      applyHeaderBtnRowLayout();
-    }, 80);
-  }
-
-  // 目标按钮行尚未出现在 DOM 时的兑底轮询（最多 20 次 × 250ms，成功即停止）
-  function startHeaderBtnBootstrap() {
-    let attempts = 0;
-    const tryApply = () => {
-      if (!isMobileLayoutFixEnabled()) return;
-      const applied = applyHeaderBtnRowLayout();
-      if (applied > 0) {
-        setupHeaderBtnObserver();
-        return;
-      }
-      if (++attempts >= 20) return;
-      headerBtnBootstrapTimer = setTimeout(tryApply, 250);
-    };
-    tryApply();
-  }
-
-  function teardownHeaderBtnObserver() {
-    if (headerBtnObserver) {
-      headerBtnObserver.disconnect();
-      headerBtnObserver = null;
-    }
-    if (headerBtnBootstrapTimer) {
-      clearTimeout(headerBtnBootstrapTimer);
-      headerBtnBootstrapTimer = null;
-    }
-  }
-
-  function setupHeaderBtnObserver() {
-    teardownHeaderBtnObserver();
-    if (!isMobileLayoutFixEnabled()) return;
-    if (!document.body) return;
-    // 缩小监听范围：仅观察仓库页头部区域，避免全页 subtree 监听的持续开销
-    const watchRoot =
-      document.querySelector("#repos-split-pane-content header") ||
-      document.querySelector("header.AppHeader") ||
-      document.querySelector("header") ||
-      document.body; // 头部未渲染时的兑底（每次 SPA 导航重置）
-    headerBtnObserver = new MutationObserver((mutations) => {
-      // 忽略本脚本自身产生的变更（如样式标签插入）
-      for (const mutation of mutations) {
-        const t = mutation.target;
-        if (
-          t &&
-          t.nodeType === 1 &&
-          t.closest &&
-          t.closest("[data-mgga-mutation-guard]")
-        ) {
-          continue;
-        }
-        scheduleHeaderBtnFix();
-        return;
-      }
-    });
-    headerBtnObserver.observe(watchRoot, { childList: true, subtree: true });
-  }
-
-  function applyMobileLayoutFix() {
-    injectHeaderBtnFixStyle();
-    if (!isMobileLayoutFixEnabled()) {
-      teardownHeaderBtnObserver();
-      return;
-    }
-    applyHeaderBtnRowLayout();
-    startHeaderBtnBootstrap();
-  }
-
-  // 对全站仓库页生效（不限于 Release），初始与视口变化时校正
-  if (document.body) {
-    applyMobileLayoutFix();
-  } else {
-    document.addEventListener("DOMContentLoaded", () => applyMobileLayoutFix(), { once: true });
-  }
-  window.addEventListener("resize", scheduleHeaderBtnFix);
-  window.addEventListener("orientationchange", scheduleHeaderBtnFix);
+  // === （原「仓库头按钮行溢出修正」整块已删除） ===
+  // 2026-09-23 按用户决定整体移除。该补丁靠 !important 覆盖 GitHub 私有类名 + 往 DOM
+  // 打内联样式，属「猜结构」型补丁；真机复测（.workbuddy/probe/diag-header-btn-fix-value.js，
+  // 桌面与移动 UA 两档 × 480/760/1280 三视口）已完全失效：三个作用点选择器命中 0、
+  // 开关开/关两档几何逐字相同、原始横向溢出症状不再出现 ⇒ 删除零代价。
+  // 详见 docs/fixes/2026-09-23-drop-repo-header-fix.md。
   window.addEventListener("resize", scheduleNavDockViewportCheck);
   window.addEventListener("orientationchange", scheduleNavDockViewportCheck);
 
@@ -7372,7 +7239,7 @@
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "mgga-nav-dock-close";
-    closeBtn.textContent = "✕";
+    closeBtn.innerHTML = uiIconSvg("x");
     closeBtn.setAttribute("aria-label", i18n.t("close"));
     closeBtn.title = i18n.t("close");
     closeBtn.addEventListener("click", (e) => {
@@ -8016,8 +7883,6 @@
   function handleSpaNavigation() {
     if (spaNavTimer) clearTimeout(spaNavTimer);
     spaNavTimer = setTimeout(() => {
-      // 移动端布局修正：所有仓库页都重新应用（不限 Release）
-      applyMobileLayoutFix();
       applyNavDock();
       if (isReleasesPage()) {
         applyColors();
