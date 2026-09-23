@@ -1,3 +1,416 @@
+v2026.10.30 [2026-09-23]
+nav dock 标题栏移出滚动容器，滚动条只覆盖条目区、不再涵盖标题栏（真机实测宿主 39–213px vs 标题栏下沿 37px）
+[
+1. 需求（用户原话）：「那么滚动条应该排除标题栏区域，不再涵括标题栏
+   （#mgga-nav-dock > div.mgga-nav-dock-header）」。
+2. 根因：上一版结构是「面板自己既是容器又是滚动口」—— 标题栏靠 position:sticky 钉住，
+   只是让它"不跟着滚走"；但**滚动条是滚动容器绘制的**，必然覆盖容器整个 border-box
+   纵向范围，而 webkit 自定义滚动条也没有"从第 N px 开始画"的能力（track / thumb
+   都不接受纵向偏移约束）。⇒ 只要滚动容器还是面板本身，滚动条就一定画过标题栏那一行，
+   sticky 治不了它。
+3. 修复：改结构，把标题栏移出滚动容器 —— 面板 flex 纵向排列 + overflow:hidden
+   （自己不再滚），条目与分割线下沉进新的滚动区 .mgga-nav-dock-body
+   （flex:1 1 auto + min-height:0 + overflow-y:auto + overscroll-behavior:contain）。
+   滚动条伪元素从 #mgga-nav-dock::-webkit-scrollbar* 全部改挂到该滚动区上，
+   Firefox 的 @supports(-moz-appearance:none) 兜底同样改挂。
+   上一版为 sticky 配的四件套（position:sticky / top:0 / z-index / 不透明背景 /
+   同色 box-shadow 补边）**全部删除** —— 它们解决的是"滚动内容从标题底下穿过"，
+   而现在滚动内容与标题根本不在同一层，那个前提没了；其作用由 flex:0 0 auto 取代
+   （面板被压短时只压缩滚动区，标题栏不被压缩）。
+4. DOM 结构变更的副作用：面板直接子节点从「header + 全部条目」变成「header + body」
+   两段，条目与分割线下沉一层 ⇒ 按 div:nth-child(N) 定位分割线要改写成
+   #mgga-nav-dock > .mgga-nav-dock-body > div:nth-child(N)。NAV_DOCK_STRUCT_VER
+   由 16 升到 17，旧面板强制重建一次。
+5. 验证（三层）：
+   ① 离线 smoke：73/73 PASS（重写滚动条闸门与标题栏闸门、面板标题栏 DOM 断言增加
+      "标题栏不得落在滚动区里"、侧栏分组断言改从滚动区取子节点）；红绿把新断言喂给
+      改动前脚本 ⇒ 69/73、FAIL 4，四条全部是本次触及的断言。
+   ② 真机功能：verify-live-navdock.js 场景 7.5 重写为「量滚动条宿主的纵向范围」——
+      改后 30/30 PASS，宿主 = .mgga-nav-dock-body、纵向 39–213px、标题栏下沿 37px
+      ⇒ 零重叠；改前 29/30，宿主 = #mgga-nav-dock、纵向 0–220px ⇒ 必然画过标题栏。
+      两版 scrollTop 0→160、标题相对面板顶边 7→7px、首条目 39→-121px 完全一致
+      ⇒ 本次没有回退上一版"标题钉住"的成果。
+   ③ 探针踩坑（第二次栽在测量时机）：7.5 第一版把宿主 rect 取在设置 max-height 之前、
+      面板 rect 取在之后，面板居中位置移动了 162px，两个坐标系混在一起 ⇒ 宿主量成
+      -124→376px、误报 FAIL。新增的 INFO 7.5d 布局诊断
+      （bodyRectH/bodyClientH/flex/minHeight）立刻指出脚本侧正常、问题在探针。
+      修法：宿主 rect 必须与面板 rect 在同一时刻取。
+6. 未验证：真机只跑了浅色主题；headless Chrome 用 overlay 滚动条（本场景"滚动条占位
+   0px"即其证据），所以 Windows 经典滚动条下的实际观感未实测 —— 滚动条距面板右边框
+   6px、而关闭按钮距 10px，可能有轻微不对齐，必要时给滚动区加 scrollbar-gutter:stable；
+   Firefox / Safari 未实测。
+]
+
+
+v2026.10.29 [2026-09-23]
+nav dock 标题栏改为 position:sticky 钉住，滚动时不再被推出容器裁掉（真机实测零位移）
+[
+1. 需求（用户原话）：「导航栏的标题栏（#mgga-nav-dock > div.mgga-nav-dock-header）
+   应该固定不参与滚动，不再因为滚动而导致导航栏的标题超出容器被截断隐藏」。
+2. 根因：面板自己就是滚动容器（overflow-y:auto + max-height:calc(100dvh - 1em)，
+   见上一版沉浸式滚动条），而标题栏只是它的**第一个普通流子节点** ⇒ 跟条目一样参与滚动，
+   滚一段就被推出滚动口、连关闭按钮一起被容器裁掉。面板高度锁在 100dvh，长仓库页 /
+   小视口下必然溢出，所以这是必然而非偶发。
+3. 修复：给 .mgga-nav-dock-header 加 position:sticky + top:0。但 sticky 一条不够，
+   另有三处配套缺一不可：① background 不透明（否则滚上来的条目从标题底下透出来、
+   字叠字）② z-index:2（条目/分割线是普通流元素，显式压住）③ 同色 box-shadow
+   `0 2px 0 0` 补边（填平 margin-bottom 那 2px 缝，否则缝里漏出滚动内容 ——
+   它不是阴影，是背景的向下延伸）。背景取与面板同色是刻意的：标题钉住时会被面板
+   border-radius:12px 圆角裁切，同色 ⇒ 裁切看不出来，不会"缺一个角"。
+4. **实测关键事实（真机量的，不是推断）**：面板 border 1px + padding 6px，
+   Chromium 把 sticky 钉在**内容盒顶边** ⇒ 标题停在距面板顶边 7px 处，
+   连那 6px 内边距都保住了，静止→滚动是**零位移**（不是"先滑 6px 再钉住"）。
+5. 新增真机场景 7.5（tools/verify-live-navdock.js）：内联 max-height:220px!important
+   把面板压到必然溢出（只改约束、不碰被测样式），设 panel.scrollTop 前后各测一次
+   标题与首条目相对面板顶边的位置。归一化到"面板顶边"而非视口顶边，因为面板是
+   position:fixed + translateY(-50%)。
+6. 真机红绿（同一次运行）：改后 **30/30 PASS**，7.5 PASS —— position=sticky，
+   标题 7→7px 不动、首条目 39→-121px 滚走；改前 **29/30**，7.5 FAIL —— position=static，
+   标题 7→**-153px**（位移恰好 -160px = 滚动距离，正是用户报的"被推出容器裁掉"原样复现）。
+   其余 29 条两版一致 ⇒ 本次改动没波及既有行为。
+7. 离线：新增源码级闸门五条（sticky / top:0 / z-index / 不透明背景 / 同色补边）
+   + DOM 级断言"标题栏必须是 panel.firstElementChild"（它才是被钉住的那个，
+   分割线的 div:nth-child 编号也依赖这个位置）。smoke 72 → **73/73 PASS**；
+   红绿旧版 **72/73、1 FAIL**，红的恰是本次那条。
+   为什么必须用源码闸门：jsdom 没有排版层也不实现 sticky，运行期验不了"钉住"，
+   只能源码锁声明 + 真机场景 7.5 验它真的生效，两者缺一不可。
+8. 判据踩坑：7.5 第一版写成 `deltaTop ≈ 0`（想当然认为钉在面板顶边），实测 7px ⇒ 误报 FAIL。
+   正确判据是「标题相对面板顶边**前后一致**」而不是钉到某个绝对值。
+   又一次印证：写推断时必须同时写下能证伪它的观测点。
+9. 未验证：真机只跑了默认浅色主题（深色下两个 CSS 变量是否都命中、圆角裁切是否露馅未实测，
+   可加判据 `getComputedStyle(header).backgroundColor === getComputedStyle(panel).backgroundColor`）；
+   面板不溢出时 sticky 无视觉作用属正常；Firefox / Safari 未实测。
+10. 回滚点 `b261c00770a44f800d39e537583d764604a64a2b`；取证与复现见
+    docs/fixes/2026-09-23-navdock-sticky-header.md。
+]
+
+v2026.10.28 [2026-09-23]
+nav dock 滚动条改为沉浸式：干掉 Windows 经典滚动条的上下步进箭头，轨道透明、滑块悬停显形，并隔离滚动接力
+[
+1. 需求（用户原话）：「有没有更沉浸的滚动条？我想导航栏的滚动条再沉浸一些，
+   起码不再显示滚动条上下顶端底端的步进箭头」。
+2. 定性：改前样式表里 "scrollbar" 出现 0 次 ⇒ 面板走浏览器默认滚动条；面板自己带
+   overflow-y:auto（max-height: calc(100dvh - 1em)）⇒ 它自己就是滚动容器。Windows 版
+   Chrome/Edge 默认渲染的是**经典滚动条**，用户看到的那对箭头是
+   ::-webkit-scrollbar-button 伪元素，不是内容也不是我们的元素，只能 CSS 关掉
+   （overflow:overlay 早已废弃）。
+3. 改动一：基座规则补 overscroll-behavior: contain —— 面板滚到两端不再把滚动接力给
+   整页（"沉浸"体感最强的一条），与设置对话框里 .color-picker-content /
+   .custom-color-picker-panel 的既有做法一致。
+4. 改动二：新增滚动条块 —— ::-webkit-scrollbar 8px；track / track-piece 全透明去边框；
+   ::-webkit-scrollbar-button 四组状态 + scrollbar-corner 一律 display:none 且尺寸归零；
+   thumb 用 rgba(127,127,127,.28) + 2px 透明描边 + background-clip:padding-box（视觉厚度
+   只有 4px），悬停面板 .5、悬停滑块本身 .72。**没有**把滑块做成"完全隐形只悬停出现"：
+   面板高度常常溢出，静默不可见会让人发现不了下面还有内容 —— 折中留一抹淡灰。
+   颜色用两极中点灰而非主题变量，明暗主题同一份对比度。
+5. Firefox 兜底：@supports (-moz-appearance: none) 里给 scrollbar-width:thin +
+   scrollbar-color（Gecko 本来就不画箭头，只缺细条）。该探测在 Chromium 恒 false，
+   不污染 webkit 规则。
+6. **最大的坑（无声失败）**：Chromium 121+ 里只要某元素的 scrollbar-width 不是 auto，
+   该元素上整组 ::-webkit-scrollbar* 规则会被**直接忽略** —— 箭头原封不动回来，且不报错、
+   DevTools 里规则看着"有效"。也就是说"顺手补个 scrollbar-width:thin 兼容一下"恰好会
+   毁掉本次全部改动。⇒ 特意用 @supports 把它关在 Firefox 专属块里，并在源码注释写明原因。
+7. 第二个坑：样式表整体是 JS 模板字符串，注释里写反引号包裹的标识符（`::-webkit-scrollbar-button`）
+   会让模板串提前闭合 ⇒ node --check 直接 SyntaxError。注释里一律改用中文引号「…」。
+8. 验证：新增源码级闸门断言（滚 5 条）—— ①::-webkit-scrollbar-button 必须 display:none；
+   ②**基座规则体内不得出现 scrollbar-width**（防 6 的无声失效）；③基座规则体内仍有
+   overflow-y:auto；④仍有 overscroll-behavior:contain；⑤@supports 块与 scrollbar-width:thin
+   都在。闸门只取 injectNavDockStyle→removeNavDock 之间的切片，不误伤页面别处。
+   smoke：71 → **72/72 PASS**；红绿旧版（87ad71b）**71/72、1 FAIL**，红的恰是本次那条。
+9. 未验证：真机未跑且跑不出结论 —— 验收对象是 ::-webkit-scrollbar-button 的**渲染**，
+   而唯一能自动截图的是 **headless Chrome，它用 overlay 滚动条、根本不渲染箭头**，
+   改与不改截图一样 ⇒ 需用户在自己浏览器里目视确认（右侧不再有上下带三角的按钮、
+   轨道无浅灰底色、滑块变细且淡）。滑块静止透明度 0.28 是估的不是量的，嫌显眼就调到 0
+   （即"完全隐形、只悬停出现"）。
+10. 回滚点 `87ad71bb87a3435dee474135a8ac14b2b701b92f`；取证与复现见
+    docs/fixes/2026-09-23-navdock-immersive-scrollbar.md。
+]
+
+v2026.10.27 [2026-09-23]
+nav dock 面板标题改为品牌名「MGGA」，并去掉各分区的小标题（只留分割线）
+[
+1. 需求（用户原话两条）：① 把 #mgga-nav-dock > div.mgga-nav-dock-header >
+   span.mgga-nav-dock-header-title 的文案改成「MGGA」；② 去掉三个分区各自的小标题。
+2. 先取证再动手：用户给的两个选择器（#mgga-nav-dock > div:nth-child(11)、
+   div:nth-child(15)）到底指向哪个元素，用留档的真实（注水后）DOM 跑主脚本数出来 ——
+   #mgga-nav-dock 的直接子节点里，除首个子节点 .mgga-nav-dock-header 外**只有**
+   .mgga-nav-dock-divider 是 div（条目全是 <a>）。iina 注水页实测子节点 18 个：
+   header(1) → 仓库 tab ×8(2..9) → 分割线(10，小标题 "Repository files") →
+   文件区 tab ×3(11..13) → 分割线(14，小标题 "Sidebar") → 侧栏 ×4(15..18)。
+   用户页上编号整体 +1（即仓库 tab 多一项）⇒ 他给的两个 div 就是这两条**分割线**
+   （小标题是分割线内的 span）。2 条分割线 ⇒ 3 个分区，与"三个分区"吻合。
+3. 改动：标题文案改用新增常量 NAV_DOCK_BRAND = "MGGA"（品牌名不是可本地化文案，
+   与同一 header 里 verSpan.title = "Make-GitHub-Great-Again" 同理），面板的
+   无障碍名仍是 panel.setAttribute("aria-label", i18n.t("navDock"))，未动。
+4. 分区小标题：buildNavDockPanel 不再创建 .mgga-nav-dock-divider-caption，
+   分割线本身**保留**（只画线）—— 用户要的是"去掉小标题"，不是"去掉分组线索"，
+   所以不动分组的视觉结构；样式表里 caption 规则同步删除，divider 规则去掉
+   只为承载文字而存在的 display:flex / align-items / gap / padding-top。
+   item.barLabel 继续采集（点击决策日志 statsOut.barBuckets 的证据链要用），
+   只是不再渲染 —— 已在代码注释里写明，防止后来者当死字段删掉。
+5. NAV_DOCK_STRUCT_VER 15 → 16：DOM 结构变了（少一个 span），旧面板强制重建一次。
+6. 验证：jsdom 冒烟 71/71（新增 2 项 + 改写 1 项）。红绿对照：同一套断言喂修复前
+   版本（MGGA_SCRIPT=.workbuddy/probe/prev-before-panel-titles.js）⇒ 71 项中 3 项
+   FAIL，恰好是"标题=MGGA / caption 零残留 / 分割线不带文字"这三项，其余 68 项不变。
+   另在留档的真实注水 DOM（.workbuddy/probe/hydrated-{desktop,mobile}.html）上就地
+   复验：标题 = "MGGA"、caption 文本 = []、分割线 2 条、锚点仍 15 条。
+   详见 docs/fixes/2026-09-23-nav-dock-panel-titles.md。
+]
+v2026.10.26 [2026-09-22]
+nav dock 新增「页面外露探测」：页面上没被收纳进 More 的项直接定位到它自身，被收纳进 More 的项不再定位、直接跳转对应 URL
+[
+1. 需求：用户要求"增强导航栏对页面上没有收纳进 More 中外露出来的项的探测 ——
+   如果项在页面上依然存在（没被折进 More）就直接定位而不是直接跳转 url；反之被
+   收纳折叠进 More 就直接跳转对应 URL 不再立即定位"。开工前先与用户确认两个边界：
+   ① 规则只作用于"本页有落点"的项（文件区 tab / 侧栏区块 / 当前页自身），跨页项
+   （Issues / Actions / Releases…）保持一键导航；② 定位落点取**页面上该项自身**
+   （点面板里的 Code → 滚到页面上 Code 那个入口），不再是笼统的"回内容区顶部"。
+2. 新增探测层 navDockSourceVisibility(item) → {state, el}，四类状态：
+   detached（源锚点不在文档里 / 该条目根本没有源锚点）、gone（被 `[hidden]` 或 CSS 的
+   display/visibility/opacity 藏起来）、more（**已被收纳进 More**：最近的 aria-hidden
+   祖先是 li 且其内唯一锚点就是它，或几何上被单行 overflow 容器裁到栏外）、
+   exposed（外露可见）。几何判据加了 `cr.width && ar.width` 这道门：没有排版层时
+   （jsdom / display:none）两侧 rect 都是 0，"无交集"是假象而不是剪裁证据。
+   探测在**点击时实时**做、不依赖面板重建 —— 因此"剪裁只改 aria-hidden / tabIndex、
+   不改 href、廉价签名不变、面板不重建"这条已知特性不会干扰判定。
+3. 分诊（handleNavDockItemClick 路径 4：落地路径 == 当前页的项）由"同页就回内容区
+   顶部"改为二分诊：外露 ⇒ 接管 + 定位到该项自身（navDockScrollToTarget(vis.el)），
+   一次导航都不发（via=page-item）；被收纳进 More ⇒ 页面上没有可见落点，一次定位
+   都不做，放行这次点击让真实（Turbo / React 软）导航走完（via=page-item-hidden）。
+   `?tab=<x>-ov-file` 例外**优先于**外露探测（否则用户会"点了 Code 却还看着
+   License"），该例外本身未改动。
+4. 一次被真机推翻的实现（**已回退，别再试**）：第一版把"收纳即放行导航"也套到了
+   路径 3（文件区概览 tab：License / Contributing / "MIT license"）。真机 400px 立刻
+   证伪 —— 点 vscode 的 MIT license 走 file-tab-hidden 后 docId 从 16058363578639023
+   变成 4421299704736088（**整页重载**），URL 落到 /microsoft/vscode/blob/HEAD/license。
+   根因：这些 tab 的 href 是 React 路由占位 `#`，面板上的落地路径是
+   resolveFileAreaTabHref 从页面证据**反推**的，反推失败时用兜底猜的文件名
+   （entry.names[0] = "license"），而 vscode 的真实文件叫 LICENSE.txt ⇒ 落到不存在的
+   路径 ⇒ 301 ⇒ 整页重载。旧版从没暴露是因为它走"切 tab"（React 客户端路由），
+   根本不用那个 href。⇒ 路径 3 维持原样（无论是否被收纳都切 tab），并留一条断言
+   （tools/smoke-load.js 场景 3h-3）把"别再套用放行规则"钉住。
+5. 真机取证（新增探针通道：验证工具在闭包出口前把判定函数挂到 window.__mggaProbe，
+   直接调用**真实函数**取真值，而不是靠肉眼判断）。页面 nav 入口可见性统计 ——
+   iina 桌面 1280：exposed 79 / more 0；iina 400px：exposed 18 / more 0；
+   iina 320px：exposed 16 / **more 2**（Contributing、License）；vscode 桌面：
+   exposed 21 / more 0；vscode 400px：exposed 17 / **more 3**（Contributing、
+   MIT license、Security）。⇒ 判定确有区分度（不是恒值），剪裁样本与
+   probe-mobile-more-structure.js 早先的 320px 结论一致。
+6. 真机点同页 Code：iina 320/400px 下 INFO 2.0 显示页面上 Code 入口判定为
+   "exposed,gone" ⇒ 走 via=page-item，实测 top=132 y=132 off=0 elTop=0（定位到页面上
+   Code 入口自身并吸顶），docId 全程不变（无整页重载）。
+7. 验证：jsdom 冒烟 69/69（新增 3 条断言）；**红绿对照** —— 同一套断言喂修复前版本
+   （MGGA_SCRIPT=.workbuddy/probe/prev-before-page-exposed.js）得 67/69，红的恰是两条
+   新能力断言（"未定位到页面上该项自身：elTop = -16"、"页面上已看不到这一项，却仍被
+   接管定位"）；真机五组：iina 400px 28/29、iina 320px 28/29、vscode 400px 28/29
+   （该组回退前为 21/22 且带一次整页重载）、iina 桌面 29/29、vscode 桌面 29/29。
+   唯一 FAIL 恒为 8.1（跨页条目走软导航）：via=pass-through 说明脚本侧放行正确，是页面侧
+   没接住这次点击 —— 修复前版本跑真机同样 FAIL，属**既有偶发**。
+8. 工具同步：tools/verify-live-navdock.js 新增 MGGA_SCRIPT（红绿对照）与 --width
+   （`--width 320` 复现折进 More 的形态）；locateScenario 支持"零定位"与"放行后确实
+   跳走"两种新断言；0.8 场景把可见性真值打进日志。取证细节与"未验证项"见
+   docs/fixes/2026-09-22-navdock-page-exposed-probe.md。
+]
+v2026.10.25 [2026-09-22]
+nav dock 修掉移动端首帧初始化时「收纳进 More 的项」丢失(Primer UnderlineNav 剪裁项被 aria-hidden 规则误杀)
+[
+1. 缘起:用户报告"当脚本首次就在移动端页面初始化时还是会仍然丢失收纳进 More
+   (#_R_1afl_)的项,而其它栏收纳进 More 的项却正常显示"。拆成三条可验证判据:
+   ① 只有某一栏丢,不是全丢;② 只在**首帧就在窄视口**时丢;③ 该栏 More 的
+   aria-controls 指向的运行时 id 形如 _R_1afl_。
+2. 根因:取数链里这条规则的判据太粗 ——
+   `if (!isFileTab && a.closest('[aria-hidden="true"]')) return reject(a,"ariaHidden")`。
+   [aria-hidden=true] 在这套 DOM 里承担两种**相反**语义,而规则只看其一:
+   ① 装饰/重复包装层(wrap spacer 空 li / 含多锚点的包装 div)⇒ 该剔除;
+   ② **剪裁项**:当前放不下、已折进 More 的导航项(li[aria-hidden] 内唯一锚点)
+   ⇒ **必须索引**。混为一谈的后果就是后者整批丢。
+3. 组件源码取证(@primer/react@38.40 dist/UnderlineNav/UnderlineNav.js +
+   UnderlineNavItem.js):`isOverflowing = useIsClipped(ref)`(IntersectionObserver,
+   root=nav)⇒ `<li aria-hidden={isOverflowing || undefined}><a href={href}
+   tabIndex={isOverflowing ? -1 : undefined}>`。即**剪裁项本体仍在 DOM 里、href
+   完整**,只是所在 li 被标 aria-hidden;More 菜单是 ActionMenu.Overlay,**只在
+   展开时渲染**,里面那几份是同一批项的**副本**,不是唯一来源。可见性走 CSS:
+   MoreButtonContainer 的 --UnderlineNav_moreButton-display 由
+   [data-has-overflow=true] 切成 flex。
+4. 版本对齐证据(证明 GitHub 现网就跑这一支):该版本 CSS 模块导出的类名与本地
+   留档 SSR **逐字一致** —— prc-UnderlineNav-UnderlineWrapper-GWONT /
+   ItemsList-oj8gN / WrapSpacer--aLgz / MoreButtonContainer-Dnrq6,SSR 上还带
+   data-overflow-mode="wrap"(该版本为硬编码)、data-hide-icons-breakpoint="medium"。
+5. 真机结构取证(新探针 tools/probe-mobile-more-structure.js,逐栏量化"零点击可读"
+   与"只能靠点击才拿到"):同一仓库 iina/iina 只改视口宽度 —— 400px 时
+   Repository files 栏 3 锚点全可见、aria-hidden 祖先 0;320px 时同一栏 3 锚点
+   只剩 1 个可见、**aria-hidden 祖先 2 个**,被剪裁的正是 Contributing / License,
+   且两项都符合"li[aria-hidden] 内唯一锚点",同时 More items 触发器出现。
+   ⇒ 机制在真机 + 真 Primer 构建上复现。
+6. 为什么只在"首帧就在窄视口"暴露:剪裁是**布局驱动**的,改变的是
+   aria-hidden / tabIndex,**不改 href**;navDockCheapSignature 只统计栏内锚点
+   href ⇒ 桌面首帧加载后再缩小,签名不变、下轮走早短路、面板沿用桌面那次收好的
+   条目,看起来"正常"(一旦别的原因触发重建同样会掉)。首帧就在窄视口时,第一次
+   构建读到的就已是剪裁态 ⇒ 直接丢。
+7. 代码内另有史证:文件区那条豁免正是为同一现象加的 ——
+   "文件区白名单占位 tab:即使 GitHub 在窄视口下隐藏了所在 li,也在 dock 中保留"。
+   文件区 tab 靠 isFileAreaTabLabel 白名单绕过了 ariaHidden 过滤(所以用户看到
+   "其它栏正常"),**仓库标签栏没有这条豁免**,于是整批丢。
+8. 修复:新增 isClippedNavItemAnchor(a, ariaHiddenHolder),判据三重收紧 ——
+   ① 最近的 aria-hidden="true" 祖先是 `<li>`(项容器,不是包装 div/ul);
+   ② 该容器内 a[href] 恰好 1 个;③ 那个锚点就是本锚点。带构建哈希的模块类名
+   (-syRjR)不可依赖,故只用结构与 href 判定。直扫过滤改为
+   `ariaHiddenHolder && !isClippedNavItemAnchor(a,holder) ⇒ reject`。放行后仍走
+   pushItem 的同名/同目的地去重链,重复项不会因此泄漏。**零点击设计不变** ——
+   剪裁项本来就在 DOM 里、href 完整,无需点开 More 取数。
+9. 回归:tools/smoke-load.js 新增夹具 repoHomeHTMLPrimerOverflow()(剪裁项形态,
+   类名含哈希后缀,用来证明修复**不依赖类名**)+ decorativeAriaHiddenNavHTML()
+   (反向样本:多锚点包装 div、非 li 容器)+ 场景 3e 共 5 条断言。
+10. 验证:node --check(主脚本 + 两个探针)通过;node tools/smoke-load.js
+    **67/67 PASS**;红绿对照(MGGA_SCRIPT=.workbuddy/probe/prev-before-primer-clip.js)
+    **FAIL 2** —— "剪裁溢出项全部进入面板"(Pull requests missing; got Code/Issues)、
+    "条数与去重正确"(收到 2 项而非 7 项),断言确实命中真问题;反向闸两条 Decoy
+    均未进面板(规则没被放宽成"aria-hidden 一律放行");真机移动端 iina
+    **28/28 PASS**、真机桌面端 microsoft/vscode **28/28 PASS**。
+11. 真机首跑出现过 8.1「跨页条目走软导航」单条 FAIL。对照留档(live-d4 /
+    live-diag-iina-mobile / live-iina-desktop / live-vscode-mobile 等)该条**历史
+    多轮同样偶发 FAIL**,工具源码注释也已自述"实测 6 次里 2 次没触发";复跑同参数
+    即 28/28。判定为既知偶发,与本次改动无关。
+12. 未验证/边界:**登录态真机未复跑**(用户报的那一栏在登录态新版 React 仓库头部,
+    本机无凭据)。替代证据是"同版本 Primer 组件源码 + 真机 320px 剪裁分支 +
+    版本类名逐字对齐 + jsdom 红绿"四段闭合。若登录态仍丢,下一步取证点已在
+    docs/fixes/2026-09-22-navdock-primer-clipped-items.md 写明:看
+    `[MGGA] nav dock: click decision` 的 bar= / ariaHidden= 分桶计数,若某栏
+    ariaHidden 仍 >0 且触发器可见,说明还有第二种剪裁形态(如 hidden 挂在锚点
+    本身、或容器不是 li),届时按同一判据放宽。
+13. 新增 tools/probe-mobile-more-structure.js(支持 --url/--mode/--width/--out):
+    按栏输出锚点数/可见数/aria-hidden 祖先数/[data-menu-item] 数/剪裁项清单/
+    aria-controls 目标存在性与"点开 More 后新出现的锚点"。它把"零点击可读性"
+    从推断变成可量化,以后遇到同类"某项为什么没进面板"先跑它。
+14. 版本号 → 2026.10.25。
+]
+
+v2026.10.24 [2026-09-22]
+nav dock 新增「侧栏」来源(Releases/Sponsor/Contributors/Languages) + 修掉 ?tab= 残留 + 打通真机验证通道
+[
+1. 缘起:用户要求把仓库侧栏区块接进 dock,并同时确认了三件事 —— ① 每个区块
+   只出一条主链接(不是把区块里的每条子链接都铺开);② 面板位置放在文件区 tab
+   之后;③ 顺手修掉"在 License 视图下点 Code 内容还停在 License"。
+   另一条并行诉求是:上一版的 4 个 nav-dock 修复要做真机验证。
+2. 前置取证(见 docs/fixes/2026-09-22-sidebar-pane-dom-evidence.md)已给出结论:
+   侧栏区块**不是 `<nav>`**(四视口场景实测 nav 恒 4 个,PaneWrapper 内 nav 数 = 0),
+   findRepoHomeNavBars() 永远收不到它们 —— 这是结构空缺,不是可以靠放宽选择器
+   绕过的,要进 dock 必须新增一条独立来源。本次即其实现。
+3. 取数:新增三个函数。repoHomeSidebarGrid() 定位 PaneWrapper 内的
+   [class*="borderGrid"];repoHomeSidebarHeadingLabel(h2) 剥离 CounterLabel +
+   VisuallyHidden 得纯名;repoHomeSidebarSectionEntries() 一个区块一条主链接。
+   **选择器只用 [class*=] 前缀与 data-component**(GitHub 设计系统标记),
+   不用带构建哈希的完整模块类名(SidebarSection-module__sectionHeading__TG36m
+   那类 —— 哈希一变即失效)。
+4. 主链接三级兜底:① h2 a[href](标题即链接:Releases/Contributors/Languages);
+   ② section a[href^="/sponsors/"]("Sponsor this project" 没有标题链接,但必然
+   含出资页链接;**必须带尾斜杠**,否则页脚那条"了解更多"的 /sponsors 会被误收);
+   ③ section a[href*="/search?l="](Languages 备选)。三级全落空 = About(纯文本
+   h2,正文是描述文本)⇒ **按设计跳过,不伪造锚点**。
+5. 两条硬过滤:① `href` 为空或以 `#` 开头则丢 —— #contributing-ov-file 这类是
+   React 路由键(**不是元素 id**,见 v2026.10.23 第 2 条),侧栏不该把它当独立
+   目的地重复提供;② 同源校验,仓库官网(homepage)、ko-fi / liberapay 这类
+   **站外**链接不进面板(进了就要接管点击,接管外站导航没有意义且会丢上下文)。
+6. 标签与计数:h2.textContent 是拼接串("Releases53 (53)"),括号来自
+   visually-hidden 读屏副本。标签取 h2 > span[class*=headingLinkWrapper] > a 的
+   纯文本;计数取 [data-component='CounterLabel'] 的 textContent(即 "53",无括号)。
+7. 接进数据源:collectRepoHomeNavItems 在既有 navList 循环**之后**追加,
+   barKey="repo-sidebar"、barLabel=i18n.t("navDockSidebar")(新增键 zh"侧栏"/
+   en"Sidebar")。条目走**无源锚点**路径(pushItem(href,label,null)),由
+   buildNavDockPanel 手工绘制 + 内置 octicon + 计数胶囊 —— **刻意不克隆侧栏
+   标题链接**:克隆会带上 data-muted 等标题专用样式,反而与面板其它条目不一致。
+   barKey 换了 ⇒ 与仓库 tab 之间自然形成一条分割线,无需额外标记。
+8. 计数胶囊:计数是标题链接的**兄弟节点**,cloneNode 带不出来,所以新增
+   appendNavDockCounterText(el,item) 补一个 .Counter 胶囊,克隆路径与回退路径
+   **都**调它。去重仍走 pushItem 原有链(标签归一 + 目的地归一):若仓库 tab 里
+   已有同一 href(如 Releases 在头部菜单也出现过),侧栏不会产生第二条。
+9. 图标:buildNavDockFallbackIcon 的 ICON_PATHS 新增 4 条 16px 真实 octicon 路径,
+   **取自 @primer/octicons 官方包,不手写**:release→tag、contributor→people、
+   language→globe、sponsor→heart。
+10. 签名必须补侧栏,否则**早短路卡死**:侧栏不属于任何 `<nav>`,而
+    navDockCheapSignature 只比 navBars —— 第一次构建时侧栏还是 SSR 骨架
+    (a[href] 数 0,只有 SkeletonText),注水后条目才出现,签名却判定"没变化"
+    直接返回 ⇒ 侧栏条目**永远补不进来**。现在把侧栏区块(标题文本 + 标题链接
+    href)拼进签名。注水数据来自 GET /{owner}/{repo}/_sidebar,需
+    Accept: application/json(无 Accept → 400,Accept: text/html → 406)。
+11. 修 ?tab= 残留:v2026.10.23 第 13 条曾把"同页条目不清 ?tab="写成**显式取舍**
+    (清参数要走 React Router 的 navigate,那正是当时要避免的重载)。本次动作很小
+    —— **不跟页面抢**:新增 navDockHasFileTabParam()(判 /-ov-file$/ 的 tab 参数),
+    handleNavDockItemClick 路径 4 加例外:不带该参数时维持原行为(接管 + 滚回内容
+    顶部,via=same-page-top);带该参数时**不接管**(via=same-page-cleartab),放行
+    这次点击作为一次真实导航走完。安全性:此时**路径**虽是仓库首页但**正文**停在
+    License/Contributing 上,目标 URL 与当前 URL 不同 ⇒ 正常访问,**不是整页重载**。
+12. 为什么"不接管"就够了(真机点击取证,MGGA_DIAG=1,三条观测):
+    ① 面板 Code 锚点确实被真实鼠标点中(target=a.UnderlineNav-item[al=Code],
+    anchorHref=/iina/iina,inPanel=true,trusted=true);
+    ② **我们这条分支没有 preventDefault,记录里 defaultPrevented 却是 true** ⇒
+    另有一层(文档级)拦截器接住了它;
+    ③ 随后有**页面锚点**被合成点击(target=a,anchorHref=https://github.com/iina/
+    iina,inPanel=false,trusted=false),URL 一步直达规范路径且不是整页导航
+    (["/iina/iina?tab=License-1-ov-file","/iina/iina"],hardNav=false,docId 不变)。
+    ⇒ 这次导航**由页面自己完成**,我们唯一正确的动作就是别跟它抢。
+    **但"是哪一层接的"没定位到**:我最初的推断是"React Router 靠 data-discover 属性
+    认领克隆锚点",为此在 6.0 里加了两个观测点,结果**推翻**了它 —— 实测面板 Code
+    锚点 {"raw":"/iina/iina","hasTab":false,"dataDiscover":null,"hasReactKey":false},
+    既无 data-discover 也无 __react* 自有键;那条 trusted:false 的页面锚点点击也
+    **不是脚本发的**(脚本里的 .click() 只有四处:路径 3 的两处回放 + 点击闸门的
+    两处 trigger)。究竟是谁、按什么条件接管,仍是未解,只留下"存在这样一层"的实证。
+    这个未解点直接决定判据取在哪:既然无法从脚本侧保证它一定发生,就不能把
+    "参数被清掉"写成断言。
+13. 试过又被回退的一版,记下来免得下次再踩:曾按路径 3 的做法改成
+    preventDefault + 把导航**委派给页面自己的锚点**(item.source),复用同一个
+    canDelegate 守卫(源锚点存在 + 已连接 + navDockAnchorIsReactManaged)。
+    **已回退**,理由是真机实测:面板 Code 条目的 item.source **不带** __react*
+    自有键 ⇒ canDelegate 恒为 false ⇒ 该分支**从未在真机上执行过**(日志里区分出的
+    via=same-page-cleartab-pass 就是它在真机上的唯一归宿);它只在 jsdom 夹具里
+    手工盖章时才跑得动。既无收益、又多带一次合成导航,且那一版观测里出现过一次
+    Execution context was destroyed(整页导航)。留 v1(放行),删掉这条死代码 ——
+    也是"先写测试再改"的反面教材:当初那条 jsdom 场景是**为了迁就实现而手工造出
+    条件**才变绿的。
+14. 可靠性与判据:"参数最终被清掉"是**页面侧**行为,真机 17 次观测里 10 次成功
+    (约 3/5),失败表现为 URL 与 docId 都不动(既没软导航、也没整页导航)。分视口
+    差异明显:移动端 11 次 8 成功(约 3/4),桌面端 6 次 2 成功(约 1/3)。因此断言
+    只压**脚本自己的决策**(via=same-page-cleartab,确定、可红绿对照),"参数被清掉"
+    只作 INFO 观测(6.0/6.0s/6.0d/6.2),并在 6.2 里给出 URL 采样序列,方便一眼看出
+    是"页面没出手"还是"导航被回滚"。给用户的诚实结论:这条修复去掉了"点了 Code
+    却还看着 License"这个**错误行为**(不再只滚回顶部),并把清参数交还页面,但这一步
+    **不是每次都会发生**(桌面端尤其明显)—— 要 100% 可靠得能调用 React Router 的
+    navigate,超出用户脚本可控范围。另加两项默认开启的稳健性改进,都是被整页导航
+    逼出来的:URL 采样序列(6.0s)、把点击后的测量包在 try/catch 里并把硬导航记成
+    FAIL(此前 Execution context was destroyed 会让工具 EXIT=2 整个挂掉)。
+15. 真机验证通道打通(此前 MEMORY.md 里"真机验证只能交给用户"的结论作废)。
+    三个坑:① GitHub 的 CSP script-src github.githubassets.com 'sha256-…' 会拦
+    page.addScriptTag({content}) —— 报 "Executing inline script violates…",脚本
+    根本不跑;必须改用 page.evaluate(脚本字符串),走 CDP Runtime.evaluate,
+    与 DevTools 控制台同级、不受页面 CSP 约束。GM_* 用 page.evaluateOnNewDocument
+    在 goto 前打桩。② page.on('load') **不能**判"整页重载"(子框架延迟加载也会
+    触发,桌面视口凭空 loads=0->1);改用文档标识 window.__mggaDocId(随机值,
+    整页重载才换新)。③"吸顶"判据**不是** scrollY===0
+    (#repos-split-pane-content 本身就在文档 171px 处),正确判据是脚本埋点
+    y==top 且 elTop≈0。
+16. 真机回归 tools/verify-live-navdock.js:22 → **28 项**,新增 0.5(按模式取真实
+    标签 —— 各仓库许可 tab 命名不同,iina="License"/vscode="MIT license"),
+    0.7–0.11(侧栏来源 5 项),6.1(断言**我们的决策**:放行软导航而非接管,
+    via=same-page-cleartab),8(跨页条目软导航 pass-through,带 2 次重试并把 click
+    方式与 via 记入证据)。四组组合(iina/vscode × desktop/mobile)**全部 28/28
+    通过**,docId 全程不变 ⇒ 零整页重载。另新增 MGGA_DIAG=1 点击诊断(默认关闭):
+    在 window 冒泡阶段(最后一个看到事件的监听器)记录每次点击的目标 / 锚点 href /
+    是否在面板内 / 最终 defaultPrevented / 是否可信事件 / 所属 nav,并对点击坐标做
+    一次 elementFromPoint —— 用来回答"这条锚点被点到了吗"与"默认行为是谁拦的"。
+17. 离线回归 tools/smoke-load.js:55 → **62/62 PASS**。新增 3i(侧栏来源进面板,
+    5 项断言:条目存在/顺序/标签纯净/计数胶囊/About 缺席)、3j(侧栏骨架→注水后
+    重建,签名必须变)、3k(?tab= 例外:带参数时不接管(defaultPrevented=false、
+    不自滚)、不带参数时仍接管)。配套夹具 sidebarGridInnerHTML /
+    sidebarSectionsHTML / sidebarRepoHTML / sidebarSkeletonHTML。
+18. 红绿对照:同一套断言喂给改动前版本(MGGA_SCRIPT 指向
+    git show 6094098:Make-GitHub-Great-Again.js)⇒ **62 项中 6 项 FAIL**:
+    ① 1 项 ?tab 例外("带 ?tab= 时仍被接管 ⇒ 只滚回顶部,正文继续停在概览文件
+    上");② 5 项侧栏来源(条目缺失 / 主链接解析 / 计数徽章 / 分割标题 /
+    骨架→注水重建)。注意"About 不进面板"在旧版会**空过**(旧版没有侧栏来源,
+    本来就没有 About),它本身不构成对本次改动的检验,起作用的是上面 6 项。
+19. 结构版本 NAV_DOCK_STRUCT_VER 14 → 15(侧栏来源改变了面板结构)。
+]
+
 v2026.10.23 [2026-09-21]
 nav dock 文件区 tab:切换后对新正文吸顶(Contributing/License 不再"下移一段距离") + 同页 tab 点击不再重载
 [

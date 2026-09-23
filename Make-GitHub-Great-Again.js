@@ -2,7 +2,7 @@
 // @name                    Make-GitHub-Great-Again
 // @name:en                 Make GitHub Great Again
 // @namespace               https://github.com
-// @version                 2026.10.23
+// @version                 2026.10.30
 // @description             为 Release 的项目添加背景色，识别文件系统平台类型，以及高亮自定义关键词；修正移动端仓库页右侧空白列，新增移动端左侧悬浮导航
 // @description:en          Add background colors to each Release Asset, identify the file system platform type and custom keywords highlighter. Fix empty right column on mobile.
 // @author                  https://github.com/HumanMus1c
@@ -66,6 +66,7 @@
         },
         navDockExpand: { zh: "展开悬浮导航", en: "Expand nav dock" },
         navDockCollapse: { zh: "收起悬浮导航", en: "Collapse nav dock" },
+        navDockSidebar: { zh: "侧栏", en: "Sidebar" },
         navDockUnavailable: {
           zh: "当前页面不是仓库主页，悬浮导航仅在 用户名/仓库 主页可用",
           en: "This page is not a repository home; the nav dock only works on owner/repo home pages",
@@ -4302,6 +4303,11 @@
   const NAV_DOCK_ID = "mgga-nav-dock";
   const NAV_DOCK_TOGGLE_ID = "mgga-nav-dock-toggle";
   const NAV_DOCK_STYLE_ID = "mgga-nav-dock-style";
+  /**
+   * 面板标题栏显示的品牌名。品牌不是文案，两种语言下都写作 "MGGA"，
+   * 因此不走 i18n（面板的无障碍名仍是 i18n.t("navDock")）。
+   */
+  const NAV_DOCK_BRAND = "MGGA";
   let navDockObserver = null;
   let navDockDebounce = null;
   /** 空结果后的延迟重试定时器（一次性，见 scheduleNavDockRetry） */
@@ -4324,7 +4330,7 @@
   /** 上次应用 dock 的路径，用于识别"进入新页面" */
   let navDockLastBuiltPath = null;
   /** 面板结构版本：DOM 结构变更时递增，旧面板强制重建一次 */
-  const NAV_DOCK_STRUCT_VER = "13";
+  const NAV_DOCK_STRUCT_VER = "17";
   /**
    * 续排自限守卫（2026-09-21 无限重扫修复）：
    * navDockDirty —— 构建期间到达的 body 变更（此时观察器回调被
@@ -4477,9 +4483,15 @@
         max-width: min(80vw, 360px) !important;
         max-height: calc(100vh - 1em) !important;
         max-height: calc(100dvh - 1em) !important;
-        overflow-y: auto !important;
-        overflow-x: hidden !important;
-        -webkit-overflow-scrolling: touch !important;
+        /* 面板自己**不再滚动** —— 滚动交给内部的 .mgga-nav-dock-body。
+           面板若也滚，滚动条必然从面板顶边画到底边、顺带压住标题栏那一行：
+           webkit 自定义滚动条无法只覆盖"下半截"（track/thumb 都不接受"从第
+           7px 开始"这种约束）。要按区域排除标题栏，唯一可靠的做法就是把标题栏
+           **移出滚动容器**，让它根本不在滚动口里。
+           配套：flex 纵向排列，body 才能靠 flex:1 + min-height:0 自己约束高度。*/
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
         box-sizing: border-box !important;
         padding: 6px !important;
         border-radius: 12px !important;
@@ -4500,8 +4512,90 @@
         transform: translateY(-50%) translateX(0) !important;
       }
 
-      /* 面板标题栏：对齐 Release 设置面板 header + 关闭按钮 */
+      /* 滚动区：条目与分割线都住在这里，标题栏在外 —— 所以滚动条只覆盖本区，
+         永远不会出现在标题栏那一行（用户诉求）。三条缺一不可：
+         ① flex:1 + min-height:0 —— flex 子项默认 min-height:auto，会被内容撑破、
+            面板整个溢出，而不是内部出滚动条（经典 flex 滚动坑）；
+         ② overscroll-behavior:contain —— 滚到两端不再把滚动接力给整页；
+         ③ -webkit-overflow-scrolling:touch —— 触屏惯性滚动，原挂在面板上。*/
+      #mgga-nav-dock > .mgga-nav-dock-body {
+        flex: 1 1 auto !important;
+        min-height: 0 !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch !important;
+        overscroll-behavior: contain !important;
+      }
+
+      /* 沉浸式滚动条：① 干掉 Windows 经典滚动条的上下步进箭头（那对箭头是
+         「::-webkit-scrollbar-button」渲染出来的伪元素，不是内容）；② 轨道完全
+         透明，滑块默认只是一抹淡灰、悬停才变实；③ 8px 轨道里用 2px 透明描边 +
+         padding-box 裁切，视觉厚度只有 4px。
+         注意：**不能**给这里补「scrollbar-width」—— 在 Chromium 121+ 上只要它
+         不是 auto，整组「::-webkit-scrollbar」规则会被直接忽略（箭头又会回来）。
+         Firefox 天然没有箭头，用标准属性单独喂（见下方 @supports 块）。*/
+      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar {
+        width: 8px !important;
+        height: 8px !important;
+        background: transparent !important;
+      }
+
+      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-track,
+      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-track-piece {
+        background: transparent !important;
+        border: none !important;
+      }
+
+      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-button,
+      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-button:vertical:decrement,
+      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-button:vertical:increment,
+      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-button:horizontal:decrement,
+      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-button:horizontal:increment,
+      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-corner {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+        background: transparent !important;
+      }
+
+      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-thumb {
+        background-color: rgba(127, 127, 127, 0.28) !important;
+        border: 2px solid transparent !important;
+        background-clip: padding-box !important;
+        border-radius: 8px !important;
+      }
+
+      #mgga-nav-dock:hover .mgga-nav-dock-body::-webkit-scrollbar-thumb,
+      #mgga-nav-dock:focus-within .mgga-nav-dock-body::-webkit-scrollbar-thumb {
+        background-color: rgba(127, 127, 127, 0.5) !important;
+      }
+
+      #mgga-nav-dock .mgga-nav-dock-body::-webkit-scrollbar-thumb:hover {
+        background-color: rgba(127, 127, 127, 0.72) !important;
+      }
+
+      /* Firefox 专属：「::-webkit-scrollbar-button」不被识别（好在 Gecko 本来
+         就不给滚动条画箭头），改用标准属性拿细条。@supports 探测在 Chromium
+         恒为 false，不会污染上面的 webkit 规则。*/
+      @supports (-moz-appearance: none) {
+        #mgga-nav-dock > .mgga-nav-dock-body {
+          scrollbar-width: thin !important;
+          scrollbar-color: rgba(127, 127, 127, 0.5) transparent !important;
+        }
+      }
+
+      /* 面板标题栏：对齐 Release 设置面板 header + 关闭按钮。
+         关键：它**不在滚动容器里**。面板是 flex 列，标题栏是第一个 flex 子项，
+         滚动口（.mgga-nav-dock-body）从它下沿才开始。所以：
+         · 标题永远不会被滚上去、也不会被容器裁掉 —— 上一版是给 position:sticky
+           打补丁（前提是"面板自己滚"），现在那个前提被直接去掉了，更彻底；
+         · 滚动条只画在 body 上 ⇒ 标题栏那一行不会出现滚动条（本次诉求）。
+         于是上一版 sticky 的三条配套（不透明背景 / z-index / 同色补边）全部作废：
+         它们都是为"滚动内容会从标题底下穿过"而生，而现在滚动内容根本不在同一层。
+         唯一必须留的是 flex-shrink:0 —— 面板被 max-height 压短时标题栏不许被
+         压缩，收缩的只能是 body（这样滚动条才落在标题栏下方）。*/
       #mgga-nav-dock .mgga-nav-dock-header {
+        flex: 0 0 auto !important;
         display: flex !important;
         align-items: center !important;
         justify-content: space-between !important;
@@ -4606,23 +4700,11 @@
         text-overflow: ellipsis !important;
       }
 
-      /* 跨栏轻微分割线：主题自适应，含栏名小标题 */
+      /* 跨栏轻微分割线：主题自适应。只画线 —— 栏名小标题已取消，
+         所以这条规则不再需要 flex 布局与文字相关属性 */
       #mgga-nav-dock .mgga-nav-dock-divider {
-        display: flex !important;
-        align-items: center !important;
-        gap: 8px !important;
         margin: 6px 4px 4px !important;
         border-top: 1px solid var(--borderColor-muted, var(--color-border-muted, rgba(125, 125, 125, 0.25))) !important;
-        padding-top: 4px !important;
-      }
-
-      #mgga-nav-dock .mgga-nav-dock-divider-caption {
-        font-size: 11px !important;
-        line-height: 1.2 !important;
-        color: var(--fgColor-muted, var(--color-fg-muted, #59636e)) !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
       }
     `;
     document.head.appendChild(style);
@@ -5326,6 +5408,23 @@
   }
 
   /**
+   * 当前 URL 是否停在某个**文件区概览 tab** 上（`?tab=readme-ov-file` /
+   * `?tab=MIT-1-ov-file` / `?tab=contributing-ov-file` …）。
+   *
+   * `-ov-file` 是 React 路由键（见 navDockHandleFileTabClick 的实证注释），
+   * 它出现在 URL 上就意味着"路径虽然是仓库首页，但正文停在某个概览文件"。
+   * 此时点同页的 Code 不能只滚回顶部 —— 否则用户"点了 Code 还在看 License"。
+   */
+  function navDockHasFileTabParam() {
+    try {
+      const tab = new URLSearchParams(location.search).get("tab");
+      return !!tab && /-ov-file$/i.test(tab);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
    * 面板条目的落地路径是否**就是当前页**（已在 Code 页时点 Code、已在 Issues
    * 页时点 Issues）。这类条目原生点击 = 一次同 URL 导航：Turbo/React Router
    * 会重取并替换整块内容、再把滚动归零，用户感知就是"重载"。
@@ -5783,10 +5882,20 @@
    *      正文本来就在页面上；
    *   3) 文件区概览 tab 且原锚点是 `href="#"` 占位 → 接管，切换后对新正文吸顶
    *      （见 navDockHandleFileTabClick）。覆盖 Contributing / License /
-   *      Code of conduct 等"要点一下才换出正文"的 tab；
-   *   4) 落地路径就是当前页（Code / Issues…）→ 接管，只把内容滚回顶部，
-   *      **一次导航都不发** —— 原生同 URL 导航会重取整块内容 + 滚动归零，
-   *      那正是用户口中的"重载"；
+   *      Code of conduct 等"要点一下才换出正文"的 tab。**路径 3 不套用外露探测**：
+   *      这些 tab 的落地路径是反推来的，被收纳时放行会踩到兜底的错文件名
+   *      （真机实测整页重载）—— 原因见该分支内侧注释；
+   *   4) 落地路径就是当前页（Code / Issues…）→ 按**页面外露探测**二选一：
+   *      · 页面上这一项**外露**（没被收纳进 More）⇒ 接管，直接定位到**它自身**，
+   *        **一次导航都不发**（`via=page-item`）。原生同 URL 导航会重取整块内容
+   *        + 滚动归零，那正是用户口中的"重载"；
+   *      · 页面上这一项**已被收纳进 More** ⇒ 页面上没有可见落点，不做任何定位，
+   *        放行这次点击让真实导航走完（`via=page-item-hidden`）。
+   *      **例外**（优先于上面的探测）：当前 URL 带 `?tab=<x>-ov-file`（正文停在
+   *      某个概览文件上）时一律放行，让这次点击作为真实导航走完，由**页面自己
+   *      那层文档级拦截**把它做成软导航、顺带把参数清成规范路径
+   *      （`via=same-page-cleartab`，见 navDockHasFileTabParam）—— 不这么做，
+   *      用户会"点了 Code 却还看着 License"；
    *   5) 其余（真实 URL 的社区文件链接、跨页 tab）→ **不接管**：面板锚点自身
    *      就是真实 href，Turbo / React Router 的全局拦截器会接管它做软导航，
    *      比我们替换更保真。
@@ -5832,21 +5941,65 @@
       return true;
     }
 
+    // 页面可见性探测：该条目在页面上**外露**，还是已被 GitHub **收纳进 More**。
+    // 这是本轮新增的探测层，也是下面两条分诊规则的依据 ——
+    //   外露 ⇒ 页面上的入口就在用户眼前，直接定位到它，一次导航都不发；
+    //   收进 More ⇒ 页面上没有可见入口，定位无处可落，放行这次点击让真实
+    //   （Turbo / React 软）导航走完，不再做任何定位。
+    const vis = navDockSourceVisibility(item);
+
     // 路径 3：文件区概览 tab 的占位锚点 → 切换 tab 后对新正文吸顶
+    // （见 navDockHandleFileTabClick）。覆盖 Contributing / License /
+    // Code of conduct 等"要点一下才换出正文"的 tab。
+    //
+    // ⚠ 这里**故意不套用**"被收纳进 More 就放行导航"那条规则（路径 4 用）：
+    // 这些 tab 的落地路径是 resolveFileAreaTabHref 从页面证据**反推**的，反推
+    // 失败时是兜底猜的文件名（`/blob/HEAD/license`）—— 而 vscode 的真实文件叫
+    // `LICENSE.txt`。真机实测（400px，`MIT license` 被折进 More 时放行）落到
+    // 不存在的路径、被 301 成**整页重载**（docId 变化），比原行为明显更差。
+    // 切 tab 走的是 React 客户端路由、不依赖那个 href，所以这里维持原路径。
     if (isFileAreaTabLabel(item.label) && placeholderTab) {
       return navDockHandleFileTabClick(event, anchor, item, srcAnchor, canDelegate);
     }
 
-    // 路径 4：落地路径就是当前页（Code / Issues…）→ 不重载，只回内容顶部
+    // 路径 4：落地路径就是当前页（Code / Issues…）→ 按页面外露探测二分诊：
+    // 页面上这一项还在且外露 ⇒ 定位到它自身；已被收纳进 More ⇒ 不定位、放行导航
     if (navDockIsSamePageHref(item)) {
-      event.preventDefault();
-      logNavDockLocate(
-        item,
-        "same-page-top",
-        "",
-        navDockScrollToTarget(navDockContentRootEl())
-      );
-      return true;
+      // 例外（优先于外露探测）：当前 URL 带 `?tab=<x>-ov-file` 时，"同页"只是
+      // **路径**相同 —— 正文其实停在某个概览文件上（License / Contributing / …），
+      // 定位到页面上的 Code tab 会让用户"点了 Code 却还看着 License"。此时
+      // **不接管**，让这次点击作为一次真实导航走完，把参数清成规范路径。
+      //
+      // 谁来完成这次导航：**页面自己**。实测（真机点击取证）面板锚点被点中时
+      // `defaultPrevented` 已经是 true，而我们这条分支并没有 preventDefault ——
+      // 说明有一层文档级的拦截器接住了它：面板锚点是**页面锚点的克隆**，
+      // cloneNode 只带属性，React Router 靠属性认领（`data-discover`），
+      // 于是它把这次点击当自己的软导航处理（URL 采样序列一步直达
+      // `/iina/iina`，docId 不变）。所以这里唯一正确的动作就是**别跟它抢**。
+      //
+      // 试过一版"自己 preventDefault + 把导航委派给 item.source 的源锚点"
+      // （复用路径 3 的做法），已被回退：真机上 item.source 不带 `__react*`
+      // 自有键 ⇒ canDelegate 恒为 false，那一段从未执行过（只在 jsdom 夹具里
+      // 手工盖章才跑得动），属于既无收益、又多带一次合成导航的死代码。
+      if (!navDockHasFileTabParam()) {
+        // 页面上这一项还在、且外露 ⇒ 直接定位到**它自身**，不导航、不重载
+        if (vis.state === "exposed") {
+          event.preventDefault();
+          logNavDockLocate(
+            item,
+            "page-item",
+            "",
+            navDockScrollToTarget(vis.el)
+          );
+          return true;
+        }
+        // 已被收纳进 More（页面上没有可见入口）⇒ 不再定位，放行这次点击
+        // 让它作为一次真实导航走完
+        logNavDockLocate(item, "page-item-hidden", "", null);
+        return false;
+      }
+      logNavDockLocate(item, "same-page-cleartab", "", null);
+      return false;
     }
 
     // 路径 5：其余 → 不接管，交还 Turbo / React Router 的全局软导航。
@@ -5912,12 +6065,234 @@
     return Math.round(window.innerWidth / 100);
   }
 
+  // === 仓库侧栏区块（PaneWrapper 内的 borderGrid）===
+  //
+  // 侧栏区块**不是 `<nav>`**：实测四个视口场景下 `nav` 恒为 4 个
+  // （Global / Repository / Repository files / Footer），PaneWrapper 内 nav 数 = 0。
+  // 因此 findRepoHomeNavBars() 永远收不到它们，必须单独取数 —— 这是设计内的
+  // 空缺，不是缺陷（见 docs/fixes/2026-09-22-sidebar-pane-dom-evidence.md）。
+  //
+  // 结构（真实 DOM，2026-09-22 三仓库 iina/vscode/kubernetes 逐字一致）：
+  //   #repos-split-pane-content … div[class*="borderGrid"]
+  //     └ div[class*="sidebarSection"]                     ← 一个区块
+  //         └ h2[data-component="Heading"]
+  //             ├ span[class*="headingLinkWrapper"]        ← 标题是链接的区块
+  //             │   ├ a[data-component="Link"][href="/o/r/releases"]
+  //             │   ├ span[data-component="CounterLabel"]53
+  //             │   └ span[class*="VisuallyHidden"]"(53)"  ← 读屏副本
+  //             └ 纯文本 span（About / Sponsor this project / Languages）
+  //
+  // 选择器只用 [class*=] 前缀与 data-component（GitHub 设计系统的稳定标记），
+  // 不用带构建哈希的完整模块类名（`SidebarSection-module__sectionHeading__TG36m`
+  // 那类 —— 哈希一变即失效）。
+
+  /** 侧栏 borderGrid：PaneWrapper 内唯一挂 borderGrid 的那层 */
+  function repoHomeSidebarGrid() {
+    const scope = document.getElementById("repos-split-pane-content") || document;
+    return (
+      scope.querySelector("[class*='borderGrid']") ||
+      document.querySelector("[class*='PageLayout-PaneWrapper'] [class*='borderGrid']") ||
+      null
+    );
+  }
+
+  /** 区块标题的纯名（剥掉计数徽章与读屏副本）："Releases53 (53)" → "Releases" */
+  function repoHomeSidebarHeadingLabel(h2) {
+    if (!h2) return "";
+    const clone = h2.cloneNode(true);
+    clone
+      .querySelectorAll("[data-component='CounterLabel'], [class*='VisuallyHidden']")
+      .forEach((el) => el.remove());
+    return normalizedText(clone);
+  }
+
+  /**
+   * 侧栏区块 → dock 条目（一个区块一条主链接）的解析。
+   *
+   * 主链接优先级：
+   *  ① 标题内的 `<a href>` —— Releases / Contributors / Used by / Deployments /
+   *     Packages：GitHub 把这几类区块的标题本身做成了链接；
+   *  ② 区块内 `a[href^="/sponsors/"]` —— "Sponsor this project" 没有标题链接，
+   *     但它必然含一条指向出资页的链接（`/sponsors/<owner>`，注意要带尾斜杠，
+   *     才能把页脚的 `/sponsors` 这种"了解更多"排除在外）；
+   *  ③ 区块内 `a[href*="/search?l="]` —— "Languages" 也没有标题链接，取占比
+   *     最高的那个语言。
+   *
+   * 三级都落空 ⇒ **跳过该区块**。About 走的正是这条路：它的可导航内容
+   * （Readme / License / Contributing）已由文件区 tab 覆盖，而 Activity /
+   * Custom properties / forks 不是"区块主链接"，硬塞进来只会让面板语义变浑。
+   *
+   * @returns [{href, label, counter}] counter 为无则空串
+   */
+  function repoHomeSidebarSectionEntries() {
+    const grid = repoHomeSidebarGrid();
+    if (!grid) return [];
+    const out = [];
+    Array.from(grid.children).forEach((section) => {
+      const h2 = section.querySelector("h2");
+      if (!h2) return;
+      let href = "";
+      const headingLink = h2.querySelector("a[href]");
+      if (headingLink) {
+        href = headingLink.getAttribute("href") || "";
+      } else {
+        const sponsorLink = section.querySelector('a[href^="/sponsors/"]');
+        const langLink = section.querySelector('a[href*="/search?l="]');
+        href =
+          (sponsorLink && sponsorLink.getAttribute("href")) ||
+          (langLink && langLink.getAttribute("href")) ||
+          "";
+      }
+      // `#...-ov-file` 是 React 路由键（不是元素 id，也不该由侧栏重复提供）
+      if (!href || href.startsWith("#")) return;
+      // 同源校验：仓库官网、ko-fi / liberapay 这类站外链接不进面板
+      try {
+        if (new URL(href, location.origin).origin !== location.origin) return;
+      } catch (_) {
+        return;
+      }
+      const label = repoHomeSidebarHeadingLabel(h2);
+      if (!label) return;
+      const counterEl = h2.querySelector("[data-component='CounterLabel']");
+      const counter = counterEl ? (counterEl.textContent || "").trim() : "";
+      out.push({ href, label, counter });
+    });
+    return out;
+  }
+
+  /**
+   * 该锚点是否是「被剪裁的导航项」—— Primer UnderlineNav 用来标记
+   * "当前放不下、已折进 More" 的 tab。
+   *
+   * 事实（@primer/react 38.40 `UnderlineNavItem` 源码；组件类名与本地留档
+   * SSR 逐字一致：`prc-UnderlineNav-UnderlineNavItem-*` / `ItemsList-oj8gN` /
+   * `MoreButtonContainer-*` / `data-overflow-mode="wrap"`）：
+   *
+   *   const isOverflowing = useIsClipped(ref);            // IntersectionObserver
+   *   <li aria-hidden={isOverflowing || undefined}>        // ← 溢出即整项 aria-hidden
+   *     <a href={href} tabIndex={isOverflowing ? -1 : undefined}>
+   *
+   * 即：**溢出项本体仍在 DOM 里、href 完整**，只是所在 `<li>` 被标 aria-hidden；
+   * More 菜单（`ActionMenu.Overlay`，运行时 id 形如 `_R_1afl_`）只在展开时才渲染，
+   * 菜单里那几份是同一批项的**副本**，不是唯一来源。剪裁由 CSS 完成
+   * （`--UnderlineNav_moreButton-display` 由 `data-has-overflow` 切换、
+   * 单行 `overflow` 容器 + IntersectionObserver 判定）。
+   *
+   * 所以「`[aria-hidden="true"]` 祖先一律不索引」这条规则会误杀它们：
+   * 移动端**首帧就在窄视口初始化**时，放不下的 tab 早已全部 aria-hidden
+   * ⇒ 面板只剩外显的一两个（"收纳进 More 的项丢失"）；而桌面首帧再缩小
+   * 之所以看似正常，是因为廉价签名只统计 href、结构未变就不重建面板，
+   * 早先收到的那批侥幸留着 —— 一旦别的原因触发重建同样会掉。
+   *
+   * 判据三重收紧，只放行「单个导航项容器」，装饰/重复包装层照旧剔除：
+   *   ① 最近的 aria-hidden="true" 祖先是 `<li>`（项容器，不是包装 div/ul）；
+   *   ② 该容器内 `a[href]` 恰好 1 个；
+   *   ③ 那个锚点就是本锚点。
+   * 类名带构建哈希（`-syRjR`）不可依赖，故只用结构与 href 判定。
+   * 放行后仍走 pushItem 的同名 / 同目的地去重链，重复项不会因此泄漏。
+   *
+   * @param a               待判定锚点
+   * @param ariaHiddenHolder 调用方已算好的 `a.closest('[aria-hidden="true"]')`
+   */
+  function isClippedNavItemAnchor(a, ariaHiddenHolder) {
+    const holder = ariaHiddenHolder || a.closest('[aria-hidden="true"]');
+    if (!holder || holder.tagName !== "LI") return false;
+    const anchors = holder.querySelectorAll("a[href]");
+    return anchors.length === 1 && anchors[0] === a;
+  }
+
+  /**
+   * 锚点最近的**水平可剪裁祖先**（Primer 把放不下的 tab 用单行 overflow
+   * 容器裁掉，`--UnderlineNav_moreButton-display` 由 `data-has-overflow` 切换）。
+   * 只认 `overflow-x` 为 hidden/clip 的祖先，且**越不过自己的 nav** ——
+   * 页面级滚动容器（`#repos-split-pane-content`，overflow-y:auto）不算剪裁，
+   * 那只是内容滚出视口，不改变"这个入口在不在栏里"。
+   */
+  function navDockClippingAncestor(a) {
+    let el = a.parentElement;
+    let depth = 0;
+    while (el && depth++ < 8) {
+      if (el.tagName === "NAV" || el.tagName === "BODY") return null;
+      let cs = null;
+      try {
+        cs = window.getComputedStyle(el);
+      } catch (_) {
+        return null;
+      }
+      if (cs && (cs.overflowX === "hidden" || cs.overflowX === "clip")) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  /**
+   * 条目源锚点在**页面上的可见性分类**（分诊 + 日志共用）：
+   *
+   *   "detached" 源锚点不在文档里 / 该条目根本没有源锚点（仓库侧栏来源）
+   *   "gone"     源锚点在文档里，但被 `[hidden]` 或 CSS（display/visibility/
+   *              opacity）藏起来
+   *   "more"     已被 GitHub **收纳进 More**：Primer 的剪裁标记
+   *              （`<li aria-hidden="true">` 内唯一锚点）或几何上被单行
+   *              overflow 容器裁到栏外
+   *   "exposed"  **外露可见** —— 页面上的这个入口用户看得见
+   *
+   * 为什么几何判据要加 `cr.width && ar.width` 这道门：没有排版层时（jsdom、
+   * 元素 display:none）两侧 rect 都是 0，此时"无交集"是假象而非剪裁证据，
+   * 必须跳过、交给上面的属性与样式判据。
+   *
+   * @returns {{state:string, el:Element|null}}
+   */
+  function navDockSourceVisibility(item) {
+    const src = item && item.source;
+    if (!(src instanceof HTMLAnchorElement) || !src.isConnected) {
+      return { state: "detached", el: null };
+    }
+    // ① Primer 剪裁标记：折进 More 的项，本体仍在 DOM 里
+    if (isClippedNavItemAnchor(src)) return { state: "more", el: src };
+    // ② 显式 hidden（溢出副本 li[data-menu-item][hidden] 等）
+    if (src.closest("[hidden]")) return { state: "gone", el: src };
+    // ③ 计算样式：display / visibility / opacity 三件套
+    let cs = null;
+    try {
+      cs = window.getComputedStyle(src);
+    } catch (_) {
+      /* ignore */
+    }
+    if (cs) {
+      if (cs.display === "none" || cs.visibility === "hidden") {
+        return { state: "gone", el: src };
+      }
+      const op = parseFloat(cs.opacity);
+      if (isFinite(op) && op === 0) return { state: "gone", el: src };
+    }
+    // ④ 几何剪裁：被单行 overflow 容器裁到栏外（aria-hidden 只是伴生标记）
+    const clip = navDockClippingAncestor(src);
+    if (clip) {
+      const cr = clip.getBoundingClientRect();
+      const ar = src.getBoundingClientRect();
+      if (cr.width && ar.width && !(ar.right > cr.left && ar.left < cr.right)) {
+        return { state: "more", el: src };
+      }
+    }
+    return { state: "exposed", el: src };
+  }
+
+  /** 便捷判据：条目在页面上是否外露（`navDockSourceVisibility` 的布尔形式） */
+  function navDockSourceExposed(item) {
+    return navDockSourceVisibility(item).state === "exposed";
+  }
+
   /**
    * 合并各栏导航项为 dock 数据源。
    *
    * 每栏的取数顺序：直扫锚点 → 预渲染溢出副本（readPrerenderedBarItems）
    * → 点击收割产物（harvestedByBar，兜底，通常为空）。三条来源都经同一
    * pushItem 去重链，按标签归一 + 目的地归一双保险。
+   *
+   * 另有一条**不依赖 nav 的独立来源**：仓库侧栏区块
+   * （repoHomeSidebarSectionEntries，一个区块一条主链接）。它不是 `<nav>`，
+   * 上面这个 navList 循环永远收不到，所以在循环之后单独追加，并同样经
+   * pushItem 去重（`barKey="repo-sidebar"` 让它与仓库 tab 之间有一条分割线）。
    *
    * @param navList        导航栏元素数组
    * @param harvestedByBar 点击收割产物（barKey → items），兜底用，可为 null
@@ -6123,8 +6498,16 @@
         // 无任何入口，dock 提供它们正是补充导航）
         const isFileTab = isFileAreaPlaceholderTab(a);
         if (a.matches("[hidden]") && !isFileTab) return reject(a, "hidden");
-        // 隐藏包装元素（UnderlineNav wrap spacer 等）内的内容不索引
-        if (!isFileTab && a.closest('[aria-hidden="true"]'))
+        // 隐藏包装元素（UnderlineNav wrap spacer 等）内的内容不索引 —— 但
+        // Primer UnderlineNav 的**剪裁项容器**（li[aria-hidden] 内唯一锚点）
+        // 里那个锚点正是折进 More 的导航项本身，必须索引
+        // （见 isClippedNavItemAnchor；移动端首帧窄视口初始化时全靠它）
+        const ariaHiddenHolder = a.closest('[aria-hidden="true"]');
+        if (
+          !isFileTab &&
+          ariaHiddenHolder &&
+          !isClippedNavItemAnchor(a, ariaHiddenHolder)
+        )
           return reject(a, "ariaHidden");
         if (a.closest("footer")) return reject(a, "outside");
         // 跳过 dock 自身条目与标题栏关闭按钮等
@@ -6172,6 +6555,25 @@
         barHarvest.forEach((it) => pushItem(it.href, it.label, it.source));
       }
     });
+
+    // === 仓库侧栏区块（PaneWrapper 内，**不是 `<nav>`**，上面的循环收不到）===
+    // 一个区块一条主链接，排在文件区 tab 之后。条目走**无源锚点**路径：由
+    // buildNavDockPanel 手工绘制 + 内置 octicon + 计数胶囊，与克隆条目同一套
+    // 视觉 —— 直接克隆侧栏标题链接会带上 data-muted 等标题专用样式，反而与
+    // 面板其它条目不一致。
+    const sidebarEntries = repoHomeSidebarSectionEntries();
+    if (sidebarEntries.length) {
+      currentBarKey = "repo-sidebar";
+      currentBarLabel = i18n.t("navDockSidebar");
+      sidebarEntries.forEach((sec) => {
+        pushItem(sec.href, sec.label, null);
+        // 计数徽章在标题链接之外（兄弟节点），cloneNode 带不出来 ——
+        // 记在 item.counterText 上，由 buildNavDockPanel 补一个 .Counter 胶囊
+        if (!sec.counter) return;
+        const pushed = items.find((x) => x.href === sec.href && !x.counterText);
+        if (pushed) pushed.counterText = sec.counter;
+      });
+    }
 
     return items;
   }
@@ -6353,6 +6755,24 @@
         hrefs.push(a.getAttribute("href") || "");
       }
       parts.push(navBarKey(bar) + "\u0003" + hrefs.join("\u0004"));
+    }
+    // 侧栏区块不属于任何 `<nav>`，必须单独进签名。否则会这样卡死：
+    // 第一次构建时侧栏还是 SSR 骨架（锚点数 0），注水后条目才出现，而
+    // 早短路只比对 navBars 的签名 ⇒ 判定"没变化"直接返回 ⇒ 侧栏条目
+    // 永远不出现。取「标题文本 + 标题链接 href」两项：前者覆盖"骨架 → 内容"，
+    // 后者覆盖"标题从无链接变成有链接"。
+    const sidebar = repoHomeSidebarGrid();
+    if (sidebar) {
+      const rows = Array.from(sidebar.children).map((sec) => {
+        const h2 = sec.querySelector("h2");
+        const a = h2 ? h2.querySelector("a[href]") : null;
+        return (
+          (h2 ? normalizedText(h2).slice(0, 48) : "") +
+          "\u0005" +
+          (a ? a.getAttribute("href") || "" : "")
+        );
+      });
+      parts.push("sidebar\u0003" + rows.join("\u0004"));
     }
     const s = parts.join("\u0002");
     let h = 0;
@@ -6578,6 +6998,27 @@
     return clone;
   }
 
+  /**
+   * 把 `item.counterText` 渲染成一个 `.Counter` 胶囊。
+   *
+   * 用于"计数不在被克隆的锚点内部"的来源：仓库侧栏区块的真实结构是
+   * `h2 > span.headingLinkWrapper > [a("Releases"), span[data-component=CounterLabel]("53"),
+   * span.VisuallyHidden("(53)")]` —— 计数是标题链接的**兄弟节点**，
+   * `cloneNode` 带不出来，所以只能另行补一个。
+   * 已经有原生计数器的条目（克隆自 tab 的 `.Counter`）直接跳过，不重复加。
+   */
+  function appendNavDockCounterText(el, item) {
+    if (!el || !item) return null;
+    const text = String(item.counterText || "").trim();
+    if (!text) return null;
+    if (el.querySelector(".Counter, [data-component='CounterLabel']")) return null;
+    const counter = document.createElement("span");
+    counter.className = "Counter";
+    counter.textContent = text;
+    el.appendChild(counter);
+    return counter;
+  }
+
   function buildNavDockPanel(items) {
     const panel = document.createElement("div");
     panel.id = NAV_DOCK_ID;
@@ -6592,7 +7033,9 @@
     header.className = "mgga-nav-dock-header";
     const title = document.createElement("span");
     title.className = "mgga-nav-dock-header-title";
-    title.textContent = i18n.t("navDock");
+    // 品牌名，不是可本地化文案（与 verSpan 的 "Make-GitHub-Great-Again" 同理）；
+    // 面板的无障碍名仍走 panel 的 aria-label = i18n.t("navDock")
+    title.textContent = NAV_DOCK_BRAND;
     // 脚本版本号（与设置面板一致）
     const verSpan = document.createElement("span");
     verSpan.className = "mgga-nav-dock-header-version";
@@ -6614,23 +7057,28 @@
     header.appendChild(closeBtn);
     panel.appendChild(header);
 
+    // 滚动区单独包一层：标题栏留在滚动容器**外**，滚动条就只会出现在条目区。
+    // 面板是 flex 列，header / body 各占一段，只有 body 内滚。
+    // 副作用：面板的直接子节点变成 [header, body]，条目与分割线都下沉一层 ——
+    // 按 div:nth-child(N) 定位分割线要写成
+    // 「#mgga-nav-dock > .mgga-nav-dock-body > div:nth-child(N)」。
+    const bodyEl = document.createElement("div");
+    bodyEl.className = "mgga-nav-dock-body";
+    bodyEl.setAttribute("data-mgga-mutation-guard", "1");
+
     const frag = document.createDocumentFragment();
     let lastBarKey = null;
     let isFirst = true;
     items.forEach((item) => {
-      // 跨栏插入轻微分割线（首个条目前不加）
+      // 跨栏插入轻微分割线（首个条目前不加）。
+      // 分割线**只留线，不留栏名小标题** —— 分区标题已取消，分组靠这条细线表达。
+      // item.barLabel 仍由 collectRepoHomeNavItems 采集（点击决策日志的证据链用），
+      // 只是不再渲染，别当死字段删掉。
       const barKey = item.barKey || "";
       if (!isFirst && lastBarKey !== null && barKey && barKey !== lastBarKey) {
         const divider = document.createElement("div");
         divider.className = "mgga-nav-dock-divider";
         divider.setAttribute("data-mgga-mutation-guard", "1");
-        const barLabel = item.barLabel || "";
-        if (barLabel) {
-          const cap = document.createElement("span");
-          cap.className = "mgga-nav-dock-divider-caption";
-          cap.textContent = barLabel;
-          divider.appendChild(cap);
-        }
         frag.appendChild(divider);
       }
       lastBarKey = barKey || lastBarKey;
@@ -6644,6 +7092,7 @@
         // 点击分诊：能页内定位就定位，目标可 AJAX 就交还原锚点，
         // 否则保持原生 href 导航（见 handleNavDockItemClick）
         attachNavDockItemClick(reused, item);
+        appendNavDockCounterText(reused, item);
         frag.appendChild(reused);
         return;
       }
@@ -6682,11 +7131,15 @@
 
       if (counter) {
         a.appendChild(counter);
+      } else {
+        // 标签尾没有计数文本、但来源另有计数（侧栏区块标题）时补上
+        appendNavDockCounterText(a, item);
       }
       attachNavDockItemClick(a, item);
       frag.appendChild(a);
     });
-    panel.appendChild(frag);
+    bodyEl.appendChild(frag);
+    panel.appendChild(bodyEl);
     return panel;
   }
 
@@ -6694,6 +7147,13 @@
   function buildNavDockFallbackIcon(label) {
     const ICON_PATHS = {
       code: "M4.72 3.22a.75.75 0 0 1 1.06 1.06L2.06 8l3.72 3.72a.75.75 0 1 1-1.06 1.06L.47 8.53a.75.75 0 0 1 0-1.06Zm6.56 0a.75.75 0 1 1 1.06-1.06l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L14.44 8Z",
+      // 以下四条供仓库侧栏来源使用（Releases / Contributors / Languages /
+      // Sponsor this project）。路径取自 @primer/octicons 官方 16px 数据，
+      // 不手写，避免一个字符错导致图标整块变形。
+      tag: "M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.752 1.752 0 0 1 1 7.775Zm1.5 0c0 .066.026.13.073.177l6.25 6.25a.25.25 0 0 0 .354 0l5.025-5.025a.25.25 0 0 0 0-.354l-6.25-6.25a.25.25 0 0 0-.177-.073H2.75a.25.25 0 0 0-.25.25ZM6 5a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z",
+      people: "M2 5.5a3.5 3.5 0 1 1 5.898 2.549 5.508 5.508 0 0 1 3.034 4.084.75.75 0 1 1-1.482.235 4 4 0 0 0-7.9 0 .75.75 0 0 1-1.482-.236A5.507 5.507 0 0 1 3.102 8.05 3.493 3.493 0 0 1 2 5.5ZM11 4a3.001 3.001 0 0 1 2.22 5.018 5.01 5.01 0 0 1 2.56 3.012.749.749 0 0 1-.885.954.752.752 0 0 1-.549-.514 3.507 3.507 0 0 0-2.522-2.372.75.75 0 0 1-.574-.73v-.352a.75.75 0 0 1 .416-.672A1.5 1.5 0 0 0 11 5.5.75.75 0 0 1 11 4Zm-5.5-.5a2 2 0 1 0-.001 3.999A2 2 0 0 0 5.5 3.5Z",
+      globe: "M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM5.78 8.75a9.64 9.64 0 0 0 1.363 4.177c.255.426.542.832.857 1.215.245-.296.551-.705.857-1.215A9.64 9.64 0 0 0 10.22 8.75Zm4.44-1.5a9.64 9.64 0 0 0-1.363-4.177c-.307-.51-.612-.919-.857-1.215a9.927 9.927 0 0 0-.857 1.215A9.64 9.64 0 0 0 5.78 7.25Zm-5.944 1.5H1.543a6.507 6.507 0 0 0 4.666 5.5c-.123-.181-.24-.365-.352-.552-.715-1.192-1.437-2.874-1.581-4.948Zm-2.733-1.5h2.733c.144-2.074.866-3.756 1.58-4.948.12-.197.237-.381.353-.552a6.507 6.507 0 0 0-4.666 5.5Zm10.181 1.5c-.144 2.074-.866 3.756-1.58 4.948-.12.197-.237.381-.353.552a6.507 6.507 0 0 0 4.666-5.5Zm2.733-1.5a6.507 6.507 0 0 0-4.666-5.5c.123.181.24.365.353.552.714 1.192 1.436 2.874 1.58 4.948Z",
+      heart: "m8 14.25.345.666a.75.75 0 0 1-.69 0l-.008-.004-.018-.01a7.152 7.152 0 0 1-.31-.17 22.055 22.055 0 0 1-3.434-2.414C2.045 10.731 0 8.35 0 5.5 0 2.836 2.086 1 4.25 1 5.797 1 7.153 1.802 8 3.02 8.847 1.802 10.203 1 11.75 1 13.914 1 16 2.836 16 5.5c0 2.85-2.045 5.231-3.885 6.818a22.066 22.066 0 0 1-3.744 2.584l-.018.01-.006.003h-.002ZM4.25 2.5c-1.336 0-2.75 1.164-2.75 3 0 2.15 1.58 4.144 3.365 5.682A20.58 20.58 0 0 0 8 13.393a20.58 20.58 0 0 0 3.135-2.211C12.92 9.644 14.5 7.65 14.5 5.5c0-1.836-1.414-3-2.75-3-1.373 0-2.609.986-3.029 2.456a.749.749 0 0 1-1.442 0C6.859 3.486 5.623 2.5 4.25 2.5Z",
       issue: "M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z",
       pull: "M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.25 2.25 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.25 2.25 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z",
       shield: "M7.467.133a1.75 1.75 0 0 1 1.066 0l5.25 1.68A1.75 1.75 0 0 1 15 3.48V7c0 1.566-.32 3.182-1.303 4.682-.983 1.498-2.585 2.813-5.032 3.855a1.697 1.697 0 0 1-1.33 0c-2.447-1.042-4.049-2.357-5.032-3.855C1.32 10.182 1 8.566 1 7V3.48a1.75 1.75 0 0 1 1.217-1.667Zm.61 1.429a.25.25 0 0 0-.153 0l-5.25 1.68a.25.25 0 0 0-.174.238V7c0 1.358.275 2.666 1.057 3.86.784 1.194 2.121 2.34 4.366 3.297a.196.196 0 0 0 .154 0c2.245-.956 3.582-2.104 4.366-3.298C13.225 9.666 13.5 8.36 13.5 7V3.48a.251.251 0 0 0-.174-.237l-5.25-1.68ZM8.75 4.75v3a.75.75 0 0 1-1.5 0v-3a.75.75 0 0 1 1.5 0ZM9 10.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z",
@@ -6707,6 +7167,11 @@
     let d = null;
     if (key.includes("security")) d = ICON_PATHS.shield;
     else if (key.includes("insight")) d = ICON_PATHS.graph;
+    // 仓库侧栏来源（Releases / Contributors / Languages / Sponsor this project）
+    else if (key.includes("release")) d = ICON_PATHS.tag;
+    else if (key.includes("contributor")) d = ICON_PATHS.people;
+    else if (key.includes("language")) d = ICON_PATHS.globe;
+    else if (key.includes("sponsor")) d = ICON_PATHS.heart;
     else if (key.includes("pull")) d = ICON_PATHS.pull;
     else if (key.includes("issue")) d = ICON_PATHS.issue;
     else if (key.includes("action")) d = ICON_PATHS.play;

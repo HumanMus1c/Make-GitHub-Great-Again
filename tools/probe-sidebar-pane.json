@@ -1,0 +1,230 @@
+[
+  {
+    "repo": "https://github.com/iina/iina",
+    "viewport": {
+      "w": 400,
+      "h": 800
+    },
+    "url": "https://github.com/iina/iina",
+    "hasContent": true,
+    "exactSelectorHits": 1,
+    "exactSelectorChain": "div.prc-PageLayout-PaneWrapper-pHPop < div.prc-PageLayout-PageLayoutContent-BneH9 < div.prc-PageLayout-PageLayoutWrapper-2BhU2 < div.prc-PageLayout-PageLayoutRoot--KH-d < div#repos-split-pane-content.SharedPageLayout-module__content__IwGAp < div.prc-PageLayout-Content-xWL-A < div.prc-PageLayout-ContentWrapper-gR9eG < div.prc-PageLayout-PageLayoutContent-BneH9 < div.prc-PageLayout-PageLayoutWrapper-2BhU2 < div.prc-PageLayout-PageLayoutRoot--KH-d < div < div < react-app.loaded < div#repo-content-pjax-container.repository-content < turbo-frame#repo-content-turbo-frame < main#js-repo-pjax-container < div < div.application-main < div.logged-out < body.logged-out < html",
+    "exactSelectorDepthBelowContent": 4,
+    "anyPaneWrapperCount": 1,
+    "anyPaneWrapperChain": "div.prc-PageLayout-PaneWrapper-pHPop < div.prc-PageLayout-PageLayoutContent-BneH9 < div.prc-PageLayout-PageLayoutWrapper-2BhU2 < div.prc-PageLayout-PageLayoutRoot--KH-d < div#repos-split-pane-content.SharedPageLayout-module__content__IwGAp < div.prc-PageLayout-Content-xWL-A < div.prc-PageLayout-ContentWrapper-gR9eG < div.prc-PageLayout-PageLayoutContent-BneH9 < div.prc-PageLayout-PageLayoutWrapper-2BhU2 < div.prc-PageLayout-PageLayoutRoot--KH-d < div < div < react-app.loaded < div#repo-content-pjax-container.repository-content < turbo-frame#repo-content-turbo-frame < main#js-repo-pjax-container < div < div.application-main < div.logged-out < body.logged-out < html",
+    "paneTextPreview": "AboutThe modern video player for macOS.iina.ioTopicshacktoberfestmacosmpvswiftvideovideo-playerResourcesReadmeLicenseContributingContributingActivityCustom prop",
+    "sections": [
+      {
+        "headingText": "About",
+        "labelOnly": "About",
+        "counter": null,
+        "inExactSelector": true,
+        "inAnyPaneWrapper": true,
+        "inNav": false,
+        "navAria": null,
+        "visible": false,
+        "classes": "SidebarSection-module__sidebarSection__e8jFN hide-sm hide-md border-0",
+        "offsetTop": 0,
+        "docLeft": 0,
+        "docWidth": 0
+      },
+      {
+        "headingText": "Releases53 (53)",
+        "labelOnly": "Releases",
+        "counter": "53",
+        "inExactSelector": true,
+        "inAnyPaneWrapper": true,
+        "inNav": false,
+        "navAria": null,
+        "visible": true,
+        "classes": "SidebarSection-module__sidebarSection__e8jFN",
+        "offsetTop": 8018,
+        "docLeft": 16,
+        "docWidth": 360
+      },
+      {
+        "headingText": "Sponsor this project",
+        "labelOnly": "Sponsor this project",
+        "counter": null,
+        "inExactSelector": true,
+        "inAnyPaneWrapper": true,
+        "inNav": false,
+        "navAria": null,
+        "visible": true,
+        "classes": "SidebarSection-module__sidebarSection__e8jFN",
+        "offsetTop": 8159,
+        "docLeft": 16,
+        "docWidth": 360
+      },
+      {
+        "headingText": "Contributors180 (180)",
+        "labelOnly": "Contributors",
+        "counter": "180",
+        "inExactSelector": true,
+        "inAnyPaneWrapper": true,
+        "inNav": false,
+        "navAria": null,
+        "visible": true,
+        "classes": "SidebarSection-module__sidebarSection__e8jFN",
+        "offsetTop": 8370,
+        "docLeft": 16,
+        "docWidth": 360
+      },
+      {
+        "headingText": "Languages",
+        "labelOnly": "Languages",
+        "counter": null,
+        "inExactSelector": true,
+        "inAnyPaneWrapper": true,
+        "inNav": false,
+        "navAria": null,
+        "visible": true,
+        "classes": "SidebarSection-module__sidebarSection__e8jFN",
+        "offsetTop": 8544,
+        "docLeft": 16,
+        "docWidth": 360
+      }
+    ],
+    "navCount": 4,
+    "navs": [
+      {
+        "aria": "Global",
+        "anchors": 61,
+        "inPaneWrapper": false,
+        "visible": false
+      },
+      {
+        "aria": "Repository",
+        "anchors": 16,
+        "inPaneWrapper": false,
+        "visible": true
+      },
+      {
+        "aria": "Repository files",
+        "anchors": 3,
+        "inPaneWrapper": false,
+        "visible": true
+      },
+      {
+        "aria": "Footer",
+        "anchors": 7,
+        "inPaneWrapper": false,
+        "visible": true
+      }
+    ]
+  },
+  {
+    "repo": "https://github.com/iina/iina",
+    "viewport": {
+      "w": 1280,
+      "h": 900
+    },
+    "url": "https://github.com/iina/iina",
+    "hasContent": true,
+    "exactSelectorHits": 1,
+    "exactSelectorChain": "div.prc-PageLayout-PaneWrapper-pHPop < div.prc-PageLayout-PageLayoutContent-BneH9 < div.prc-PageLayout-PageLayoutWrapper-2BhU2 < div.prc-PageLayout-PageLayoutRoot--KH-d < div#repos-split-pane-content.SharedPageLayout-module__content__IwGAp < div.prc-PageLayout-Content-xWL-A < div.prc-PageLayout-ContentWrapper-gR9eG < div.prc-PageLayout-PageLayoutContent-BneH9 < div.prc-PageLayout-PageLayoutWrapper-2BhU2 < div.prc-PageLayout-PageLayoutRoot--KH-d < div < div < react-app.loaded < div#repo-content-pjax-container.repository-content < turbo-frame#repo-content-turbo-frame < main#js-repo-pjax-container < div < div.application-main < div.logged-out < body.logged-out < html",
+    "exactSelectorDepthBelowContent": 4,
+    "anyPaneWrapperCount": 1,
+    "anyPaneWrapperChain": "div.prc-PageLayout-PaneWrapper-pHPop < div.prc-PageLayout-PageLayoutContent-BneH9 < div.prc-PageLayout-PageLayoutWrapper-2BhU2 < div.prc-PageLayout-PageLayoutRoot--KH-d < div#repos-split-pane-content.SharedPageLayout-module__content__IwGAp < div.prc-PageLayout-Content-xWL-A < div.prc-PageLayout-ContentWrapper-gR9eG < div.prc-PageLayout-PageLayoutContent-BneH9 < div.prc-PageLayout-PageLayoutWrapper-2BhU2 < div.prc-PageLayout-PageLayoutRoot--KH-d < div < div < react-app.loaded < div#repo-content-pjax-container.repository-content < turbo-frame#repo-content-turbo-frame < main#js-repo-pjax-container < div < div.application-main < div.logged-out < body.logged-out < html",
+    "paneTextPreview": "AboutThe modern video player for macOS.iina.ioTopicshacktoberfestmacosmpvswiftvideovideo-playerResourcesReadmeLicenseContributingContributingActivityCustom prop",
+    "sections": [
+      {
+        "headingText": "About",
+        "labelOnly": "About",
+        "counter": null,
+        "inExactSelector": true,
+        "inAnyPaneWrapper": true,
+        "inNav": false,
+        "navAria": null,
+        "visible": true,
+        "classes": "SidebarSection-module__sidebarSection__e8jFN hide-sm hide-md border-0",
+        "offsetTop": 190,
+        "docLeft": 976,
+        "docWidth": 272
+      },
+      {
+        "headingText": "Releases53 (53)",
+        "labelOnly": "Releases",
+        "counter": "53",
+        "inExactSelector": true,
+        "inAnyPaneWrapper": true,
+        "inNav": false,
+        "navAria": null,
+        "visible": true,
+        "classes": "SidebarSection-module__sidebarSection__e8jFN",
+        "offsetTop": 647,
+        "docLeft": 976,
+        "docWidth": 272
+      },
+      {
+        "headingText": "Sponsor this project",
+        "labelOnly": "Sponsor this project",
+        "counter": null,
+        "inExactSelector": true,
+        "inAnyPaneWrapper": true,
+        "inNav": false,
+        "navAria": null,
+        "visible": true,
+        "classes": "SidebarSection-module__sidebarSection__e8jFN",
+        "offsetTop": 788,
+        "docLeft": 976,
+        "docWidth": 272
+      },
+      {
+        "headingText": "Contributors180 (180)",
+        "labelOnly": "Contributors",
+        "counter": "180",
+        "inExactSelector": true,
+        "inAnyPaneWrapper": true,
+        "inNav": false,
+        "navAria": null,
+        "visible": true,
+        "classes": "SidebarSection-module__sidebarSection__e8jFN",
+        "offsetTop": 999,
+        "docLeft": 976,
+        "docWidth": 272
+      },
+      {
+        "headingText": "Languages",
+        "labelOnly": "Languages",
+        "counter": null,
+        "inExactSelector": true,
+        "inAnyPaneWrapper": true,
+        "inNav": false,
+        "navAria": null,
+        "visible": true,
+        "classes": "SidebarSection-module__sidebarSection__e8jFN",
+        "offsetTop": 1213,
+        "docLeft": 976,
+        "docWidth": 272
+      }
+    ],
+    "navCount": 4,
+    "navs": [
+      {
+        "aria": "Global",
+        "anchors": 61,
+        "inPaneWrapper": false,
+        "visible": true
+      },
+      {
+        "aria": "Repository",
+        "anchors": 16,
+        "inPaneWrapper": false,
+        "visible": true
+      },
+      {
+        "aria": "Repository files",
+        "anchors": 3,
+        "inPaneWrapper": false,
+        "visible": true
+      },
+      {
+        "aria": "Footer",
+        "anchors": 7,
+        "inPaneWrapper": false,
+        "visible": true
+      }
+    ]
+  }
+]
